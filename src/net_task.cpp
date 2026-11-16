@@ -46,6 +46,15 @@ static void publishAttributes() {
   doc["hot"] = app::settings.hot;
   doc["autoOn"] = app::settings.autoOn;
   doc["preOpenMin"] = app::settings.preOpenMin;
+  doc["irMode"] = (int)app::settings.irMode;
+  char irLearned[8]; // CSV "1,0,1,0" ตามลำดับ IrButton (PowerOn,PowerOff,TempUp,TempDown)
+  snprintf(irLearned, sizeof(irLearned), "%c,%c,%c,%c",
+           app::irCode(autoac::IrButton::PowerOn).learned ? '1' : '0',
+           app::irCode(autoac::IrButton::PowerOff).learned ? '1' : '0',
+           app::irCode(autoac::IrButton::TempUp).learned ? '1' : '0',
+           app::irCode(autoac::IrButton::TempDown).learned ? '1' : '0');
+  doc["irLearned"] = irLearned;
+  doc["irLearnStatus"] = app::lastIrLearnStatus();
   char buf[256];
   size_t n = serializeJson(doc, buf);
   mqtt.publish("v1/devices/me/attributes", (const uint8_t*)buf, n, false);
@@ -74,10 +83,17 @@ static void onMqttMessage(char* topic, uint8_t* payload, unsigned int len) {
   else if (!strcmp(method, "sync")) cmd.type = autoac::Command::Type::Sync;
   else if (!strcmp(method, "extend")) cmd.type = autoac::Command::Type::Extend;
   else if (!strcmp(method, "setSetting")) {
-    cmd.type = autoac::Command::Type::SetSetting;
     const char* key = params["key"] | "";
-    strncpy(cmd.strArg, key, sizeof(cmd.strArg) - 1);
-    cmd.intArg = params["value"].as<int>();
+    if (!strcmp(key, "irLearnStart")) {
+      cmd.type = autoac::Command::Type::IrLearnStart;
+      cmd.intArg = params["value"].as<int>();
+    } else if (!strcmp(key, "irLearnCancel")) {
+      cmd.type = autoac::Command::Type::IrLearnCancel;
+    } else {
+      cmd.type = autoac::Command::Type::SetSetting;
+      strncpy(cmd.strArg, key, sizeof(cmd.strArg) - 1);
+      cmd.intArg = params["value"].as<int>();
+    }
   } else if (!strcmp(method, "setSchedule")) {
     cmd.type = autoac::Command::Type::SetSchedule;
     cmd.intArg = params["day"].as<int>();
