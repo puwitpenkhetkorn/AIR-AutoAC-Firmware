@@ -10,12 +10,20 @@ enum class Source : uint8_t { Screen, Telegram, Web, ThingsBoard, Auto, Schedule
 enum class AcMode : uint8_t { Cool = 0, Fan = 1, Dry = 2, Auto = 3 };
 enum class FanSpeed : uint8_t { Auto = 0, Low = 1, Mid = 2, High = 3 };
 
+// โหมดส่ง IR ต่อห้อง: Protocol = ใช้ IRac (เช่น Haier), Learned = ใช้รหัสดิบที่เรียนรู้จากรีโมทจริง
+enum class IrMode : uint8_t { Protocol = 0, Learned = 1 };
+// ปุ่มที่เรียนรู้ได้ในโหมด Learned (นับจำนวนครั้งได้แม่นยำเท่านั้น — ไม่รวมโหมด/พัดลมที่เป็นปุ่มวนลูป)
+enum class IrButton : uint8_t { PowerOn = 0, PowerOff = 1, TempUp = 2, TempDown = 3 };
+constexpr int IR_BUTTON_COUNT = 4;
+
 // คำสั่งที่เข้าคิวกลาง cmdQueue จากทุกช่องทาง (กติกาข้อ 1)
 struct Command {
   enum class Type : uint8_t {
     On, Off, SetTemp, SetMode, SetFan, Auto, Manual, Sync, Extend,
     SetSetting, SetSchedule, AddHoliday, RemoveHoliday, Touch,
     HwIrTest, // ปุ่มทดสอบ IR ดิบจากหน้าจอเครื่องมือช่าง — ไม่ผ่าน Controller (intArg: 1=on, 0=off)
+    IrLearnStart, // เริ่มเรียนรู้ปุ่ม IR — ไม่ผ่าน Controller (intArg: ค่า IrButton ที่จะเรียนรู้)
+    IrLearnCancel, // ยกเลิกการเรียนรู้ที่กำลังทำอยู่ — ไม่ผ่าน Controller (ไม่ใช้ intArg)
   };
 
   Type type;
@@ -33,6 +41,7 @@ struct Settings {
   uint8_t hot = 27;         // เปิดเมื่อร้อน 24–32 °C
   bool autoOn = true;       // เปิดอัตโนมัติเมื่อร้อน (ไม่ผูกกับขอบล่างของช่องทาง)
   uint16_t preOpenMin = 10; // เปิดล่วงหน้า 0–30 นาที ก่อนคาบเรียน
+  IrMode irMode = IrMode::Protocol; // โหมดส่ง IR ของห้องนี้
 };
 
 struct ScheduleSlot {
