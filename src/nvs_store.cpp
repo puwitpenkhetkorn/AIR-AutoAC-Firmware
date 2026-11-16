@@ -34,3 +34,22 @@ void nvsSaveHolidays() {
   prefs.putBytes("holidays", &app::holidays, sizeof(app::holidays));
   prefs.end();
 }
+
+void nvsLoadIrCodes(LearnedIrCode out[autoac::IR_BUTTON_COUNT]) {
+  prefs.begin("autoac", true);
+  for (int i = 0; i < autoac::IR_BUTTON_COUNT; i++) {
+    char key[4];
+    snprintf(key, sizeof(key), "ir%d", i);
+    size_t n = prefs.getBytes(key, &out[i], sizeof(LearnedIrCode));
+    if (n != sizeof(LearnedIrCode)) out[i] = LearnedIrCode{};
+  }
+  prefs.end();
+}
+
+void nvsSaveIrCode(autoac::IrButton b, const LearnedIrCode& code) {
+  char key[4];
+  snprintf(key, sizeof(key), "ir%d", (int)b);
+  prefs.begin("autoac", false);
+  prefs.putBytes(key, &code, sizeof(LearnedIrCode));
+  prefs.end();
+}
