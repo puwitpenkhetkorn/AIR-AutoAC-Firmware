@@ -71,7 +71,10 @@ bool tbConnected() { return g_tbOk; }
 static LearnedIrCode g_irCodes[autoac::IR_BUTTON_COUNT];
 
 const LearnedIrCode& irCode(autoac::IrButton b) { return g_irCodes[(int)b]; }
-void setIrCode(autoac::IrButton b, const LearnedIrCode& code) { g_irCodes[(int)b] = code; }
+void setIrCode(autoac::IrButton b, const LearnedIrCode& code) {
+  g_irCodes[(int)b] = code;
+  markAttributesDirty();
+}
 
 static char g_irLearnStatus[24] = "idle";
 
@@ -79,6 +82,16 @@ const char* lastIrLearnStatus() { return g_irLearnStatus; }
 void setLastIrLearnStatus(const char* status) {
   strncpy(g_irLearnStatus, status, sizeof(g_irLearnStatus) - 1);
   g_irLearnStatus[sizeof(g_irLearnStatus) - 1] = '\0';
+  markAttributesDirty();
+}
+
+static bool g_attributesDirty = false;
+
+void markAttributesDirty() { g_attributesDirty = true; }
+bool consumeAttributesDirty() {
+  bool v = g_attributesDirty;
+  g_attributesDirty = false;
+  return v;
 }
 
 void initShared() {

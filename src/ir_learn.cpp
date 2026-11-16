@@ -34,12 +34,17 @@ bool irLearnPoll(bool& outOk, autoac::IrButton& outButton, LearnedIrCode& outCod
   decode_results results;
   if (irrecv.decode(&results)) {
     outButton = g_button;
-    if (results.rawlen > 150) {
+    // rawbuf เก็บเป็น "tick" (2us) และ rawbuf[0] เป็นค่าดัมมี่จากอินเทอร์รัปต์ ไม่ใช่สัญญาณจริง
+    // ต้องแปลงเป็นไมโครวินาทีจริงด้วย resultToRawArray/getCorrectedRawLength ก่อนเก็บ/ยิงซ้ำ (IRutils.h)
+    uint16_t correctedLen = getCorrectedRawLength(&results);
+    if (correctedLen > 150) {
       outOk = false; // too_long — ไม่บันทึก
     } else {
+      uint16_t* arr = resultToRawArray(&results);
       outCode = LearnedIrCode{};
-      outCode.len = (uint8_t)results.rawlen;
-      for (uint16_t i = 0; i < results.rawlen; i++) outCode.raw[i] = results.rawbuf[i];
+      outCode.len = (uint8_t)correctedLen;
+      for (uint16_t i = 0; i < correctedLen; i++) outCode.raw[i] = arr[i];
+      delete[] arr;
       outCode.learned = true;
       outOk = true;
     }
@@ -48,7 +53,7 @@ bool irLearnPoll(bool& outOk, autoac::IrButton& outButton, LearnedIrCode& outCod
     return true;
   }
 
-  if (millis() >= g_deadlineMs) {
+  if ((int32_t)(millis() - g_deadlineMs) >= 0) {
     outOk = false;
     outButton = g_button;
     g_active = false;

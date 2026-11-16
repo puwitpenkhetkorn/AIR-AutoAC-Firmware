@@ -85,8 +85,13 @@ static void onMqttMessage(char* topic, uint8_t* payload, unsigned int len) {
   else if (!strcmp(method, "setSetting")) {
     const char* key = params["key"] | "";
     if (!strcmp(key, "irLearnStart")) {
-      cmd.type = autoac::Command::Type::IrLearnStart;
-      cmd.intArg = params["value"].as<int>();
+      int btn = params["value"].as<int>();
+      if (btn < 0 || btn >= autoac::IR_BUTTON_COUNT) {
+        known = false; // ค่าปุ่มนอกช่วง 0-3 — ไม่รับคำสั่ง กันเขียนเลยขอบ g_irCodes[]
+      } else {
+        cmd.type = autoac::Command::Type::IrLearnStart;
+        cmd.intArg = btn;
+      }
     } else if (!strcmp(key, "irLearnCancel")) {
       cmd.type = autoac::Command::Type::IrLearnCancel;
     } else {
@@ -187,6 +192,9 @@ static void netTaskLoop(void*) {
         if (now - lastTelemetry >= TELEMETRY_MS) {
           lastTelemetry = now;
           publishTelemetry();
+        }
+        if (app::consumeAttributesDirty()) {
+          publishAttributes(); // แจ้งเว็บทันทีเมื่อ irMode/irLearned/irLearnStatus เปลี่ยน ไม่ต้องรอ reconnect รอบหน้า
         }
       }
     }

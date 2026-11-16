@@ -39,6 +39,11 @@ void setIrCode(autoac::IrButton b, const LearnedIrCode& code);
 const char* lastIrLearnStatus();
 void setLastIrLearnStatus(const char* status);
 
+// แจ้ง net_task ว่า attribute (irMode/irLearned/irLearnStatus ฯลฯ) เปลี่ยน ต้อง publish ใหม่
+// ไม่ต้องรอรอบ reconnect MQTT ครั้งถัดไป — net_task เช็ค+เคลียร์ทุกลูป
+void markAttributesDirty();
+bool consumeAttributesDirty();
+
 inline bool spiLock(uint32_t timeoutMs = 1000) {
   return xSemaphoreTake(spiMutex, pdMS_TO_TICKS(timeoutMs)) == pdTRUE;
 }

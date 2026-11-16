@@ -87,12 +87,10 @@ static void sendLearnedButton(autoac::IrButton b) {
 static void irSendLearned(const autoac::Controller::Decision& d, int8_t tempDelta) {
   if (irLearnActive()) return; // RX/TX ห้ามชนกัน — ข้ามรอบนี้ ตัดสินใจใหม่รอบถัดไป
 
+  // เปิด/ปิดยิงทันทีเสมอ (ไม่ขึ้นกับ burst อุณหภูมิค้างอยู่) — กฎความปลอดภัย/ประหยัดไฟอย่างปิดห้องว่าง
+  // ต้องไม่ถูกเงียบๆ ข้ามเพียงเพราะมี burst อุณหภูมิเก่าค้างอยู่ (แก้จากรีวิว I4)
   if (d.sendOn || d.sendOff) {
-    if (g_pendingPresses > 0) {
-      Serial.println("[ir] กำลังส่งคำสั่งอุณหภูมิค้างอยู่ — ข้ามคำสั่งเปิด/ปิดนี้");
-    } else {
-      sendLearnedButton(d.sendOn ? autoac::IrButton::PowerOn : autoac::IrButton::PowerOff);
-    }
+    sendLearnedButton(d.sendOn ? autoac::IrButton::PowerOn : autoac::IrButton::PowerOff);
   }
 
   if (d.updateSetTemp && tempDelta != 0) {
@@ -106,7 +104,8 @@ static void irSendLearned(const autoac::Controller::Decision& d, int8_t tempDelt
         int presses = abs((int)tempDelta);
         g_pendingPresses = presses > 14 ? 14 : presses;
         g_pendingButton = btn;
-        g_nextPressMs = millis();
+        // ถ้าเพิ่งสั่งเปิดในดีซิชันเดียวกัน รอ ~1 วิก่อนกดอุณหภูมิ — แอร์หลายรุ่นไม่รับสัญญาณช่วงเพิ่งเปิด (รีวิว I6)
+        g_nextPressMs = millis() + (d.sendOn ? 1000 : 0);
       }
     }
   }
@@ -155,7 +154,7 @@ static void applySetSetting(const autoac::Command& cmd) {
   else if (!strcmp(cmd.strArg, "hot")) app::settings.hot = (uint8_t)constrain(v, 24, 32);
   else if (!strcmp(cmd.strArg, "autoOn")) app::settings.autoOn = v != 0;
   else if (!strcmp(cmd.strArg, "preOpenMin")) app::settings.preOpenMin = (uint16_t)constrain(v, 0, 30);
-  else if (!strcmp(cmd.strArg, "irMode")) app::settings.irMode = v != 0 ? autoac::IrMode::Learned : autoac::IrMode::Protocol;
+  else if (!strcmp(cmd.strArg, "irMode")) { app::settings.irMode = v != 0 ? autoac::IrMode::Learned : autoac::IrMode::Protocol; app::markAttributesDirty(); }
   else return; // key ไม่รู้จัก — ไม่บันทึก
   nvsSaveSettings();
 }
@@ -225,6 +224,7 @@ static void controlTaskLoop(void*) {
   pinMode(PIN_PIR, INPUT);
   dht.begin();
   irLearnBegin();
+  irSendDev.begin(); // IRac ของ Protocol mode เรียก begin() ให้เองใน sendAc() แต่ irSendDev (โหมด Learned) ไม่มีใครเรียกให้
 
   uint32_t lastDhtMs = 0;
   float lastTempC = 25, lastHumidity = 50;
@@ -249,9 +249,10 @@ static void controlTaskLoop(void*) {
       }
       if (cmd.type == autoac::Command::Type::IrLearnStart) {
         // เรียนรู้ปุ่ม IR จากรีโมทจริง — ไม่ผ่าน Controller (กติกาสถาปัตยกรรมข้อ 2)
-        if (g_pendingPresses > 0) {
+        if (irLearnActive() || g_pendingPresses > 0) {
+          // กำลังฟังปุ่มอื่นอยู่ หรือกำลังส่ง burst อุณหภูมิค้างอยู่ — ไม่แทรก และห้ามรายงานว่า listening ปุ่มใหม่
           app::setLastIrLearnStatus("busy");
-          publishEvent("ir_learn", "web", "กำลังส่งคำสั่งอุณหภูมิอยู่ ลองใหม่อีกครั้ง");
+          publishEvent("ir_learn", "web", "กำลังเรียนรู้/ส่งคำสั่งอยู่ ลองใหม่อีกครั้ง");
         } else {
           autoac::IrButton b = static_cast<autoac::IrButton>(cmd.intArg);
           irLearnStart(b);
@@ -325,7 +326,15 @@ static void controlTaskLoop(void*) {
     applyDecision(d, beforeTick);
 
     logTick();
-    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    // ระหว่างมี burst อุณหภูมิค้างอยู่ (โหมด Learned) ต้องวนถี่กว่า 1 วิ ไม่งั้นจะกดห่างกันเกิน 400ms ตามสเปก (รีวิว I5)
+    uint32_t loopDelayMs = 1000;
+    if (g_pendingPresses > 0) {
+      int32_t untilNextPress = (int32_t)(g_nextPressMs - millis());
+      loopDelayMs = untilNextPress > 0 ? (uint32_t)untilNextPress : 0;
+      if (loopDelayMs > 1000) loopDelayMs = 1000;
+    }
+    vTaskDelay(pdMS_TO_TICKS(loopDelayMs));
   }
 }
 
