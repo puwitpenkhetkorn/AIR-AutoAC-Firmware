@@ -35,6 +35,10 @@ bool tbConnected();
 const LearnedIrCode& irCode(autoac::IrButton b);
 void setIrCode(autoac::IrButton b, const LearnedIrCode& code);
 
+// สถานะการเรียนรู้ IR ล่าสุด (เช่น "ok:power_on", "timeout:temp_up") — Control task เขียน, net_task อ่าน
+const char* lastIrLearnStatus();
+void setLastIrLearnStatus(const char* status);
+
 inline bool spiLock(uint32_t timeoutMs = 1000) {
   return xSemaphoreTake(spiMutex, pdMS_TO_TICKS(timeoutMs)) == pdTRUE;
 }

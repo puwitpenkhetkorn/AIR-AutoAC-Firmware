@@ -73,6 +73,14 @@ static LearnedIrCode g_irCodes[autoac::IR_BUTTON_COUNT];
 const LearnedIrCode& irCode(autoac::IrButton b) { return g_irCodes[(int)b]; }
 void setIrCode(autoac::IrButton b, const LearnedIrCode& code) { g_irCodes[(int)b] = code; }
 
+static char g_irLearnStatus[24] = "idle";
+
+const char* lastIrLearnStatus() { return g_irLearnStatus; }
+void setLastIrLearnStatus(const char* status) {
+  strncpy(g_irLearnStatus, status, sizeof(g_irLearnStatus) - 1);
+  g_irLearnStatus[sizeof(g_irLearnStatus) - 1] = '\0';
+}
+
 void initShared() {
   g_snapshotMutex = xSemaphoreCreateMutex();
   cmdQueue = xQueueCreate(16, sizeof(autoac::Command));

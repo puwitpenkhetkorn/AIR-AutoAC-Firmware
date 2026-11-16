@@ -6,14 +6,26 @@
 #include "log_sd.h"
 #include "pins.h"
 #include "../lib/autoac_core/Controller.h"
+#include "ir_learn.h"
 #include <DHT.h>
 #include <IRac.h>
+#include <IRsend.h>
 
 static DHT dht(PIN_DHT22, DHT22);
 static autoac::Controller controller(app::settings);
 static IRac irAc(PIN_IR_TX);
+static IRsend irSendDev(PIN_IR_TX);
 
 static uint32_t g_pirWarmupStartMs = 0;
+
+static const char* irButtonName(autoac::IrButton b) {
+  switch (b) {
+    case autoac::IrButton::PowerOn: return "power_on";
+    case autoac::IrButton::PowerOff: return "power_off";
+    case autoac::IrButton::TempUp: return "temp_up";
+    default: return "temp_down";
+  }
+}
 
 static stdAc::opmode_t toIrMode(autoac::AcMode m) {
   switch (m) {
@@ -56,6 +68,59 @@ static void irSend(bool on, uint8_t setTemp, autoac::AcMode mode, autoac::FanSpe
                 on ? "ON" : "OFF", setTemp, (int)mode, (int)fan);
 }
 
+// ----- โหมด Learned: ยิงรหัสดิบที่เรียนรู้จากรีโมทจริง แทนโปรโตคอล IRac -----
+// เปิด/ปิด = ยิง 1 ครั้งทันที, ปรับอุณหภูมิ = ยิง TempUp/TempDown ซ้ำตามจำนวนองศาที่ต่าง (เว้น 400ms/ครั้ง ไม่บล็อก)
+static int g_pendingPresses = 0;
+static autoac::IrButton g_pendingButton = autoac::IrButton::TempUp;
+static uint32_t g_nextPressMs = 0;
+
+static void sendLearnedButton(autoac::IrButton b) {
+  const LearnedIrCode& code = app::irCode(b);
+  if (!code.learned) {
+    Serial.printf("[ir] ยังไม่เรียนรู้ปุ่ม %s — ข้าม\n", irButtonName(b));
+    return;
+  }
+  irSendDev.sendRaw(code.raw, code.len, 38);
+  Serial.printf("[ir] ยิงปุ่มที่เรียนรู้ไว้: %s\n", irButtonName(b));
+}
+
+static void irSendLearned(const autoac::Controller::Decision& d, int8_t tempDelta) {
+  if (irLearnActive()) return; // RX/TX ห้ามชนกัน — ข้ามรอบนี้ ตัดสินใจใหม่รอบถัดไป
+
+  if (d.sendOn || d.sendOff) {
+    if (g_pendingPresses > 0) {
+      Serial.println("[ir] กำลังส่งคำสั่งอุณหภูมิค้างอยู่ — ข้ามคำสั่งเปิด/ปิดนี้");
+    } else {
+      sendLearnedButton(d.sendOn ? autoac::IrButton::PowerOn : autoac::IrButton::PowerOff);
+    }
+  }
+
+  if (d.updateSetTemp && tempDelta != 0) {
+    if (g_pendingPresses > 0) {
+      Serial.println("[ir] กำลังส่งคำสั่งอุณหภูมิค้างอยู่ — ข้ามคำสั่งอุณหภูมิใหม่นี้");
+    } else {
+      autoac::IrButton btn = tempDelta > 0 ? autoac::IrButton::TempUp : autoac::IrButton::TempDown;
+      if (!app::irCode(btn).learned) {
+        Serial.printf("[ir] ยังไม่เรียนรู้ปุ่ม %s — ข้ามคำสั่งอุณหภูมิ\n", irButtonName(btn));
+      } else {
+        int presses = abs((int)tempDelta);
+        g_pendingPresses = presses > 14 ? 14 : presses;
+        g_pendingButton = btn;
+        g_nextPressMs = millis();
+      }
+    }
+  }
+}
+
+static void irSendLearnedTick() {
+  if (irLearnActive()) return; // RX/TX ห้ามชนกัน
+  if (g_pendingPresses <= 0) return;
+  if (millis() < g_nextPressMs) return;
+  sendLearnedButton(g_pendingButton);
+  g_pendingPresses--;
+  g_nextPressMs = millis() + 400;
+}
+
 static bool readDHT(float& outTempC, float& outHumidity) {
   float t = dht.readTemperature();
   float h = dht.readHumidity();
@@ -90,6 +155,7 @@ static void applySetSetting(const autoac::Command& cmd) {
   else if (!strcmp(cmd.strArg, "hot")) app::settings.hot = (uint8_t)constrain(v, 24, 32);
   else if (!strcmp(cmd.strArg, "autoOn")) app::settings.autoOn = v != 0;
   else if (!strcmp(cmd.strArg, "preOpenMin")) app::settings.preOpenMin = (uint16_t)constrain(v, 0, 30);
+  else if (!strcmp(cmd.strArg, "irMode")) app::settings.irMode = v != 0 ? autoac::IrMode::Learned : autoac::IrMode::Protocol;
   else return; // key ไม่รู้จัก — ไม่บันทึก
   nvsSaveSettings();
 }
@@ -124,10 +190,16 @@ static void applyHoliday(const autoac::Command& cmd, bool add) {
   nvsSaveHolidays();
 }
 
-static void applyDecision(const autoac::Controller::Decision& d) {
+static void applyDecision(const autoac::Controller::Decision& d, const autoac::AcState& before) {
   if (!d.any()) return;
   autoac::AcState ac = controller.state();
-  irSend(ac.on, ac.setTemp, ac.mode, ac.fan);
+
+  if (app::settings.irMode == autoac::IrMode::Protocol) {
+    irSend(ac.on, ac.setTemp, ac.mode, ac.fan);
+  } else {
+    int8_t tempDelta = d.updateSetTemp ? (int8_t)((int)ac.setTemp - (int)before.setTemp) : 0;
+    irSendLearned(d, tempDelta);
+  }
   app::setLastAcState(ac);
 
   const char* cmdName = d.sendOn ? "on" : d.sendOff ? "off" : d.updateSetTemp ? "temp" :
@@ -152,6 +224,7 @@ static void controlTaskLoop(void*) {
   g_pirWarmupStartMs = millis();
   pinMode(PIN_PIR, INPUT);
   dht.begin();
+  irLearnBegin();
 
   uint32_t lastDhtMs = 0;
   float lastTempC = 25, lastHumidity = 50;
@@ -174,10 +247,52 @@ static void controlTaskLoop(void*) {
         logEvent(on ? "hw_on" : "hw_off", "hw", "ทดสอบ IR จากหน้าจอเครื่องมือช่าง");
         continue;
       }
+      if (cmd.type == autoac::Command::Type::IrLearnStart) {
+        // เรียนรู้ปุ่ม IR จากรีโมทจริง — ไม่ผ่าน Controller (กติกาสถาปัตยกรรมข้อ 2)
+        if (g_pendingPresses > 0) {
+          app::setLastIrLearnStatus("busy");
+          publishEvent("ir_learn", "web", "กำลังส่งคำสั่งอุณหภูมิอยู่ ลองใหม่อีกครั้ง");
+        } else {
+          autoac::IrButton b = static_cast<autoac::IrButton>(cmd.intArg);
+          irLearnStart(b);
+          char status[24];
+          snprintf(status, sizeof(status), "listening:%s", irButtonName(b));
+          app::setLastIrLearnStatus(status);
+        }
+        continue;
+      }
+      if (cmd.type == autoac::Command::Type::IrLearnCancel) {
+        irLearnCancel();
+        app::setLastIrLearnStatus("idle");
+        continue;
+      }
 
       autoac::Controller::Decision d;
-      if (controller.applyCommand(cmd, now, d)) applyDecision(d);
+      autoac::AcState before = controller.state();
+      if (controller.applyCommand(cmd, now, d)) applyDecision(d, before);
     }
+
+    {
+      bool learnOk = false;
+      autoac::IrButton learnButton = autoac::IrButton::PowerOn;
+      LearnedIrCode learnCode;
+      if (irLearnPoll(learnOk, learnButton, learnCode)) {
+        const char* statusWord;
+        if (learnOk) {
+          app::setIrCode(learnButton, learnCode);
+          nvsSaveIrCode(learnButton, learnCode);
+          statusWord = "ok";
+        } else {
+          statusWord = "timeout"; // ครอบคลุม too_long ด้วย (ทั้งคู่ = ไม่ได้รหัส)
+        }
+        char status[24];
+        snprintf(status, sizeof(status), "%s:%s", statusWord, irButtonName(learnButton));
+        app::setLastIrLearnStatus(status);
+        publishEvent("ir_learn", "web", status);
+        logEvent("ir_learn", "web", status);
+      }
+    }
+    irSendLearnedTick();
 
     if (now - lastDhtMs >= 2200) { // DHT22 ต้องเว้น >= 2 วิ/ครั้ง (CLAUDE.md)
       lastDhtMs = now;
@@ -205,8 +320,9 @@ static void controlTaskLoop(void*) {
     in.minutesSlotRemaining = sched.minutesRemaining;
     in.minutesToNextSlotStart = sched.minutesToNext;
 
+    autoac::AcState beforeTick = controller.state();
     autoac::Controller::Decision d = controller.tick(in);
-    applyDecision(d);
+    applyDecision(d, beforeTick);
 
     logTick();
     vTaskDelay(pdMS_TO_TICKS(1000));
