@@ -1,4 +1,5 @@
 #include "app.h"
+#include "nvs_store.h"
 
 namespace app {
 
@@ -67,6 +68,11 @@ void setNetStatus(bool wifiOk, bool tbOk) {
 bool wifiConnected() { return g_wifiOk; }
 bool tbConnected() { return g_tbOk; }
 
+static LearnedIrCode g_irCodes[autoac::IR_BUTTON_COUNT];
+
+const LearnedIrCode& irCode(autoac::IrButton b) { return g_irCodes[(int)b]; }
+void setIrCode(autoac::IrButton b, const LearnedIrCode& code) { g_irCodes[(int)b] = code; }
+
 void initShared() {
   g_snapshotMutex = xSemaphoreCreateMutex();
   cmdQueue = xQueueCreate(16, sizeof(autoac::Command));
@@ -77,6 +83,8 @@ void initShared() {
     schedule[d][0] = {false, 480, 1020};
     schedule[d][1] = {false, 480, 1020};
   }
+
+  nvsLoadIrCodes(g_irCodes);
 }
 
 } // namespace app

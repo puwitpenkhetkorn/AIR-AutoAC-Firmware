@@ -4,6 +4,7 @@
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
 #include "../lib/autoac_core/types.h"
+#include "ir_learn.h"
 
 // สถานะ/ทรัพยากรที่ใช้ร่วมกันหลาย task (กติกาเฟิร์มแวร์ CLAUDE.md ข้อ 1-3)
 namespace app {
@@ -29,6 +30,10 @@ autoac::AcState lastAcState();
 void setNetStatus(bool wifiOk, bool tbOk);
 bool wifiConnected();
 bool tbConnected();
+
+// รหัส IR ที่เรียนรู้มา — Control task เป็นคนเขียน, net_task อ่านอย่างเดียว
+const LearnedIrCode& irCode(autoac::IrButton b);
+void setIrCode(autoac::IrButton b, const LearnedIrCode& code);
 
 inline bool spiLock(uint32_t timeoutMs = 1000) {
   return xSemaphoreTake(spiMutex, pdMS_TO_TICKS(timeoutMs)) == pdTRUE;
