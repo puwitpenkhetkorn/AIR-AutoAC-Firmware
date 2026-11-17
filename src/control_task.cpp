@@ -10,6 +10,7 @@
 #include "rtc.h"
 #include "amg8833.h"
 #include "buzzer.h"
+#include "radar.h"
 #include <DHT.h>
 #include <IRac.h>
 #include <IRsend.h>
@@ -262,6 +263,7 @@ static void controlTaskLoop(void*) {
   rtcBegin(); // ตั้งเวลาระบบจาก DS3231 ถ้ามี — ให้ตารางเรียน/วันหยุด/log รู้เวลาได้ทันทีแม้ WiFi ยังไม่ต่อ
   amg8833Begin(); // I2C เดียวกับ DS3231 (ต่อ rtcBegin() เรียก Wire.begin() ไว้แล้ว)
   buzzerBegin();
+  radarBegin();
 
   uint32_t lastDhtMs = 0;
   float lastTempC = 25, lastHumidity = 50;
@@ -353,8 +355,9 @@ static void controlTaskLoop(void*) {
 
     bool pirReady = now - g_pirWarmupStartMs >= 60000;
     bool pirMotion = pirReady && digitalRead(PIN_PIR) == HIGH;
-    // เจอฝั่งใดฝั่งหนึ่งถือว่ามีคน — PIR จับได้แค่ตอนเคลื่อนไหว คนนั่งนิ่งนานๆ กล้องความร้อนยังเห็นความร้อนคนอยู่
-    bool occupied = pirMotion || amg8833DetectPresence(); // ยังไม่รวม LD2410C — รอบถัดไป
+    radarPoll(); // ไม่บล็อก — แค่อ่าน UART ที่มีอยู่แล้วประกอบเฟรม
+    // เจอฝั่งใดฝั่งหนึ่งถือว่ามีคน — PIR จับได้แค่ตอนเคลื่อนไหว กล้องความร้อน/เรดาร์ยังเห็นคนนั่งนิ่งได้
+    bool occupied = pirMotion || amg8833DetectPresence() || radarPresence();
     app::setLastSensors(lastTempC, lastHumidity, occupied);
 
     ScheduleNow sched = computeScheduleNow(now);

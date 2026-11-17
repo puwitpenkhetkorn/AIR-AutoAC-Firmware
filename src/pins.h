@@ -33,3 +33,7 @@
 // ไฟสถานะ + เสียง
 #define PIN_WS2812B        48 // ใช้ RMT (core 2.x API)
 #define PIN_BUZZER         38
+
+// เรดาร์ Ai-Thinker Rd-01 (24GHz mmWave) — UART ต่อ ESP32 IO1/IO2
+#define PIN_RADAR_RX       1 // ESP32 รับ ← Rd-01 ส่ง (TX ของโมดูล)
+#define PIN_RADAR_TX       2 // ESP32 ส่ง → Rd-01 รับ (RX ของโมดูล) — ใช้เวลาจะสั่ง config command เท่านั้น
