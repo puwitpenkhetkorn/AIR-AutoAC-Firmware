@@ -38,9 +38,12 @@ class LGFX : public lgfx::LGFX_Device {
     }
     { // touch (ทัช ≤ 2.5MHz — CLAUDE.md)
       auto cfg = _touch_instance.config();
-      cfg.x_min = 0; cfg.x_max = 239;
-      cfg.y_min = 0; cfg.y_max = 319;
+      // x_min/x_max/y_min/y_max คือช่วงค่าดิบจาก ADC ของชิป XPT2046 (ปกติ ~300-3900)
+      // ไม่ใช่พิกเซลจอ — ของเดิมใส่เป็นพิกเซล (0-239,0-319) ทับ default ที่ถูกต้องไปโดยไม่ตั้งใจ
+      // ปล่อยให้ Touch_XPT2046 ใช้ default ของตัวเอง (x:300-3900, y:400-3900) ไปก่อนจนกว่าจะมีค่า calibrate จริง
       cfg.pin_cs = PIN_TOUCH_CS;
+      // ไม่ตั้ง pin_int — ถ้าขา IRQ ลอย/ไม่ได้ต่อจริง จะทำให้ไลบรารีคืนค่า "ไม่กด" ทันทีเสมอ
+      // โดยไม่สนใจสัญญาณ X/Y เลย (ยังไม่ยืนยันว่าขานี้ต่อจริงบนบอร์ด — ปล่อยใช้วิธี poll ผ่าน SPI อย่างเดียวไปก่อน)
       cfg.spi_host = SPI2_HOST;
       cfg.freq = 2000000;
       cfg.pin_sclk = PIN_LCD_SCK;
