@@ -8,6 +8,8 @@
 #include "../lib/autoac_core/Controller.h"
 #include "ir_learn.h"
 #include "rtc.h"
+#include "amg8833.h"
+#include "buzzer.h"
 #include <DHT.h>
 #include <IRac.h>
 #include <IRsend.h>
@@ -258,6 +260,8 @@ static void controlTaskLoop(void*) {
   irLearnBegin();
   irSendDev.begin(); // IRac ของ Protocol mode เรียก begin() ให้เองใน sendAc() แต่ irSendDev (โหมด Learned) ไม่มีใครเรียกให้
   rtcBegin(); // ตั้งเวลาระบบจาก DS3231 ถ้ามี — ให้ตารางเรียน/วันหยุด/log รู้เวลาได้ทันทีแม้ WiFi ยังไม่ต่อ
+  amg8833Begin(); // I2C เดียวกับ DS3231 (ต่อ rtcBegin() เรียก Wire.begin() ไว้แล้ว)
+  buzzerBegin();
 
   uint32_t lastDhtMs = 0;
   float lastTempC = 25, lastHumidity = 50;
@@ -349,7 +353,8 @@ static void controlTaskLoop(void*) {
 
     bool pirReady = now - g_pirWarmupStartMs >= 60000;
     bool pirMotion = pirReady && digitalRead(PIN_PIR) == HIGH;
-    bool occupied = pirMotion; // แสดงผล "มีคนในห้อง" อย่างง่าย (ยังไม่รวม AMG8833/LD2410C — รอบถัดไป)
+    // เจอฝั่งใดฝั่งหนึ่งถือว่ามีคน — PIR จับได้แค่ตอนเคลื่อนไหว คนนั่งนิ่งนานๆ กล้องความร้อนยังเห็นความร้อนคนอยู่
+    bool occupied = pirMotion || amg8833DetectPresence(); // ยังไม่รวม LD2410C — รอบถัดไป
     app::setLastSensors(lastTempC, lastHumidity, occupied);
 
     ScheduleNow sched = computeScheduleNow(now);
@@ -368,6 +373,12 @@ static void controlTaskLoop(void*) {
     autoac::AcState beforeTick = controller.state();
     autoac::Controller::Decision d = controller.tick(in);
     applyDecision(d, beforeTick);
+
+    // บี๊บเตือนตอนเริ่มนับถอยหลังจะปิดแอร์อัตโนมัติ (ห้องว่าง/ใกล้หมดคาบ) — บี๊บครั้งเดียวตอนเริ่ม ไม่ใช่รัวทุกวินาที
+    static bool wasWarning = false;
+    bool isWarning = controller.warnActive();
+    if (isWarning && !wasWarning) buzzerBeep();
+    wasWarning = isWarning;
 
     logTick();
 

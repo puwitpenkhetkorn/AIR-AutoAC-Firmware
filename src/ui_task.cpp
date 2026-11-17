@@ -10,6 +10,7 @@ void uiTaskStart() {} // env autoac_bench: ไม่ต่อจอ — ข้�
 
 #include "app.h"
 #include "display.h"
+#include "buzzer.h"
 
 static LGFX display;
 
@@ -178,6 +179,7 @@ static void handlePinTouch(int16_t tx, int16_t ty) {
         return;
       } else {
         g_pinLen = 0; // PIN ผิด — เคลียร์แล้วให้ใส่ใหม่ (ไม่ต้องแยก error state ให้ซับซ้อน)
+        buzzerBeep(400, 200); // เสียงทุ้มยาวกว่าปกติ แยกจากเสียงกดปุ่มทั่วไป (ยังไม่มี — แค่ตอนนี้)
       }
     } else if (g_pinLen < 4) {
       g_pinEntered[g_pinLen++] = b.label[0];
