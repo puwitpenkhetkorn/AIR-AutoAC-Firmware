@@ -94,6 +94,9 @@ static void onMqttMessage(char* topic, uint8_t* payload, unsigned int len) {
       }
     } else if (!strcmp(key, "irLearnCancel")) {
       cmd.type = autoac::Command::Type::IrLearnCancel;
+    } else if (!strcmp(key, "calibrateTemp")) {
+      cmd.type = autoac::Command::Type::CalibrateTemp;
+      cmd.intArg = params["value"].as<int>();
     } else {
       cmd.type = autoac::Command::Type::SetSetting;
       strncpy(cmd.strArg, key, sizeof(cmd.strArg) - 1);

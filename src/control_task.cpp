@@ -268,6 +268,15 @@ static void controlTaskLoop(void*) {
         app::setLastIrLearnStatus("idle");
         continue;
       }
+      if (cmd.type == autoac::Command::Type::CalibrateTemp) {
+        // ซิงค์อุณหภูมิจริง (โหมด Learned ที่นับแบบสัมพัทธ์อาจเพี้ยนสะสม) — ไม่ผ่าน Controller::applyCommand ไม่ส่ง IR
+        uint8_t v = (uint8_t)constrain(cmd.intArg, (int32_t)autoac::MAX_ALLOWED_TEMP_C - 14, (int32_t)autoac::MAX_ALLOWED_TEMP_C);
+        controller.calibrateSetTemp(v);
+        app::setLastAcState(controller.state());
+        publishEvent("calibrate_temp", "web", "ซิงค์อุณหภูมิให้ตรงจอแอร์จริง");
+        logEvent("calibrate_temp", "web", "ซิงค์อุณหภูมิให้ตรงจอแอร์จริง");
+        continue;
+      }
 
       autoac::Controller::Decision d;
       autoac::AcState before = controller.state();

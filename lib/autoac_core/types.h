@@ -24,6 +24,7 @@ struct Command {
     HwIrTest, // ปุ่มทดสอบ IR ดิบจากหน้าจอเครื่องมือช่าง — ไม่ผ่าน Controller (intArg: 1=on, 0=off)
     IrLearnStart, // เริ่มเรียนรู้ปุ่ม IR — ไม่ผ่าน Controller (intArg: ค่า IrButton ที่จะเรียนรู้)
     IrLearnCancel, // ยกเลิกการเรียนรู้ที่กำลังทำอยู่ — ไม่ผ่าน Controller (ไม่ใช้ intArg)
+    CalibrateTemp, // ซิงค์อุณหภูมิที่จำไว้ให้ตรงจอแอร์จริง — ไม่ผ่าน Controller::applyCommand (intArg: อุณหภูมิจริง)
   };
 
   Type type;

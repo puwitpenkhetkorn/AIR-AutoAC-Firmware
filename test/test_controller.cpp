@@ -206,6 +206,31 @@ void test_manual_only_mode_disables_auto_rules() {
   TEST_ASSERT_TRUE(c.state().on);
 }
 
+// ---- ซิงค์อุณหภูมิจริง (โหมด Learned) — แก้ค่าที่ซอฟต์แวร์จำไว้ตรงๆ ไม่ผ่าน Decision/IR ----
+
+void test_calibrate_set_temp_updates_state_without_decision() {
+  Settings s = makeSettings();
+  Controller c(s);
+  c.begin(0);
+
+  c.calibrateSetTemp(22);
+  TEST_ASSERT_EQUAL_UINT8(22, c.state().setTemp);
+}
+
+void test_calibrate_set_temp_does_not_count_as_command_for_spam_guard() {
+  Settings s = makeSettings();
+  Controller c(s);
+  c.begin(0);
+
+  c.calibrateSetTemp(22);
+
+  // ซิงค์ไม่ควรนับเป็น "คำสั่ง" ที่กันสั่งถี่ — สั่งเปิดทันทีหลังซิงค์ต้องผ่านได้ปกติ
+  Command on{Command::Type::On, Source::Web};
+  Controller::Decision d;
+  TEST_ASSERT_TRUE(c.applyCommand(on, 0, d));
+  TEST_ASSERT_TRUE(d.sendOn);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_manual_on_off_basic);
@@ -217,5 +242,7 @@ int main() {
   RUN_TEST(test_hot_rule_requires_recent_pir);
   RUN_TEST(test_dht_invalid_disables_hot_rule);
   RUN_TEST(test_manual_only_mode_disables_auto_rules);
+  RUN_TEST(test_calibrate_set_temp_updates_state_without_decision);
+  RUN_TEST(test_calibrate_set_temp_does_not_count_as_command_for_spam_guard);
   return UNITY_END();
 }

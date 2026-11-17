@@ -212,6 +212,10 @@ class Controller {
     return true;
   }
 
+  // ซิงค์อุณหภูมิที่ซอฟต์แวร์จำไว้ให้ตรงกับที่จอแอร์จริงโชว์ (โหมด Learned ที่กด +/- เป็นสัมพัทธ์ อาจเพี้ยนสะสมได้)
+  // แก้ตรงๆ ไม่ใช่ "คำสั่ง" — ไม่ผ่านกันสั่งถี่/ไม่เริ่ม manual override/ไม่ส่ง IR ใดๆ ทั้งสิ้น
+  void calibrateSetTemp(uint8_t v) { ac_.setTemp = v; }
+
   const AcState& state() const { return ac_; }
   bool warnActive() const { return warnUntil_ != 0 || scheduleWarnActive_; }
   uint32_t warnRemainingSec(uint32_t nowMs) const {
