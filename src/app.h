@@ -44,6 +44,11 @@ void setLastIrLearnStatus(const char* status);
 void markAttributesDirty();
 bool consumeAttributesDirty();
 
+// แจ้ง net_task ว่าสถานะแอร์ (ac_on/ac_set_temp/...) เปลี่ยน ต้องส่ง telemetry ทันที
+// ไม่ต้องรอรอบ 30 วิปกติ (setLastAcState() เรียกให้อัตโนมัติ)
+void markTelemetryDirty();
+bool consumeTelemetryDirty();
+
 inline bool spiLock(uint32_t timeoutMs = 1000) {
   return xSemaphoreTake(spiMutex, pdMS_TO_TICKS(timeoutMs)) == pdTRUE;
 }

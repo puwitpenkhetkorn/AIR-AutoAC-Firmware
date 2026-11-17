@@ -28,6 +28,7 @@ void setLastAcState(const autoac::AcState& ac) {
   xSemaphoreTake(g_snapshotMutex, portMAX_DELAY);
   g_ac = ac;
   xSemaphoreGive(g_snapshotMutex);
+  markTelemetryDirty();
 }
 
 float lastTempC() {
@@ -86,8 +87,15 @@ void setLastIrLearnStatus(const char* status) {
 }
 
 static bool g_attributesDirty = false;
+static bool g_telemetryDirty = false;
 
 void markAttributesDirty() { g_attributesDirty = true; }
+void markTelemetryDirty() { g_telemetryDirty = true; }
+bool consumeTelemetryDirty() {
+  bool v = g_telemetryDirty;
+  g_telemetryDirty = false;
+  return v;
+}
 bool consumeAttributesDirty() {
   bool v = g_attributesDirty;
   g_attributesDirty = false;

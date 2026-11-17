@@ -192,9 +192,9 @@ static void netTaskLoop(void*) {
       if (mqtt.connected()) {
         mqtt.loop();
         uint32_t now = millis();
-        if (now - lastTelemetry >= TELEMETRY_MS) {
+        if (now - lastTelemetry >= TELEMETRY_MS || app::consumeTelemetryDirty()) {
           lastTelemetry = now;
-          publishTelemetry();
+          publishTelemetry(); // เปลี่ยนสถานะแอร์ (เปิด/ปิด/อุณหภูมิ) ต้องขึ้นเว็บทันที ไม่รอรอบ 30 วิปกติ
         }
         if (app::consumeAttributesDirty()) {
           publishAttributes(); // แจ้งเว็บทันทีเมื่อ irMode/irLearned/irLearnStatus เปลี่ยน ไม่ต้องรอ reconnect รอบหน้า
