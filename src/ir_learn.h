@@ -5,9 +5,12 @@
 // เรียนรู้รหัส IR ดิบจากรีโมทจริง (โหมด Learned) — ไม่บล็อก ต้อง poll ทุก tick ของ Control task
 // (กติกาเฟิร์มแวร์: ห้าม task ค้างรอสัญญาณ IR)
 
+// รีโมทแอร์จริงส่วนใหญ่เป็นเฟรม full-state ยาว ~200-400+ ช่อง (ทดสอบจริงเจอ 230) — 150 เดิมเล็กเกินไป
+constexpr int IR_RAW_MAX = 400;
+
 struct LearnedIrCode {
-  uint16_t raw[150] = {0};
-  uint8_t len = 0;
+  uint16_t raw[IR_RAW_MAX] = {0};
+  uint16_t len = 0;
   bool learned = false;
 };
 

@@ -259,6 +259,7 @@ static void controlTaskLoop(void*) {
           char status[24];
           snprintf(status, sizeof(status), "listening:%s", irButtonName(b));
           app::setLastIrLearnStatus(status);
+          Serial.printf("[ir_learn] เริ่มฟัง %s\n", irButtonName(b));
         }
         continue;
       }
@@ -291,6 +292,7 @@ static void controlTaskLoop(void*) {
         app::setLastIrLearnStatus(status);
         publishEvent("ir_learn", "web", status);
         logEvent("ir_learn", "web", status);
+        Serial.printf("[ir_learn] จบ session: %s\n", status);
       }
     }
     irSendLearnedTick();
