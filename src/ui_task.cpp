@@ -57,12 +57,14 @@ static void uiTaskLoop(void*) {
   app::spiUnlock();
 
   bool wasPressed = false;
+  uint32_t lastRedrawMs = 0;
 
   for (;;) {
     if (app::spiLock(200)) {
-      // ---- อ่านทัช ----
+      // ---- อ่านทัช (ทุก loop ~50ms เพื่อให้กดแล้วตอบสนองไว) ----
       int32_t tx, ty;
       bool pressed = display.getTouch(&tx, &ty);
+      tx = 239 - tx; // แผงทัชติดตั้งกลับด้านกับจอ (แกน X) — ยืนยันจากฮาร์ดแวร์จริง: กด ON ไปโดนปุ่ม OFF
       static uint32_t lastTouchLog = 0;
       if (millis() - lastTouchLog > 500) { // debug: log ดิบทุก 0.5 วิ ไม่ว่าจะกดหรือไม่
         lastTouchLog = millis();
@@ -77,30 +79,34 @@ static void uiTaskLoop(void*) {
       }
       wasPressed = pressed;
 
-      // ---- อัปเดตสถานะ ----
-      bool wifiOk = app::wifiConnected();
-      bool tbOk = app::tbConnected();
-      drawRow(30, "WiFi:", wifiOk ? "Connected" : "Disconnected", wifiOk ? TFT_GREEN : TFT_RED);
-      drawRow(50, "ThingsBoard:", tbOk ? "Connected" : "Disconnected", tbOk ? TFT_GREEN : TFT_RED);
+      // ---- อัปเดตสถานะ (วาดใหม่แค่ทุก 500ms — ข้อมูลไม่ได้เปลี่ยนถี่ และลด SPI traffic ที่ไปแย่งจังหวะอ่านทัช) ----
+      uint32_t now = millis();
+      if (now - lastRedrawMs >= 500) {
+        lastRedrawMs = now;
+        bool wifiOk = app::wifiConnected();
+        bool tbOk = app::tbConnected();
+        drawRow(30, "WiFi:", wifiOk ? "Connected" : "Disconnected", wifiOk ? TFT_GREEN : TFT_RED);
+        drawRow(50, "ThingsBoard:", tbOk ? "Connected" : "Disconnected", tbOk ? TFT_GREEN : TFT_RED);
 
-      float t = app::lastTempC();
-      float h = app::lastHumidity();
-      char tbuf[16], hbuf[16];
-      snprintf(tbuf, sizeof(tbuf), "%.1f C", t);
-      snprintf(hbuf, sizeof(hbuf), "%.0f %%", h);
-      drawRow(78, "Temp:", tbuf);
-      drawRow(98, "Humidity:", hbuf);
-      drawRow(118, "PIR motion:", app::lastOccupied() ? "Detected" : "None");
+        float t = app::lastTempC();
+        float h = app::lastHumidity();
+        char tbuf[16], hbuf[16];
+        snprintf(tbuf, sizeof(tbuf), "%.1f C", t);
+        snprintf(hbuf, sizeof(hbuf), "%.0f %%", h);
+        drawRow(78, "Temp:", tbuf);
+        drawRow(98, "Humidity:", hbuf);
+        drawRow(118, "PIR motion:", app::lastOccupied() ? "Detected" : "None");
 
-      autoac::AcState ac = app::lastAcState();
-      drawRow(146, "AC command:", ac.on ? "ON" : "OFF", ac.on ? TFT_GREEN : TFT_DARKGREY);
-      display.fillRect(0, 170, 240, 18, TFT_BLACK);
-      display.setTextColor(TFT_DARKGREY);
-      display.drawString("Technician tool - not for end users", 4, 170);
+        autoac::AcState ac = app::lastAcState();
+        drawRow(146, "AC command:", ac.on ? "ON" : "OFF", ac.on ? TFT_GREEN : TFT_DARKGREY);
+        display.fillRect(0, 170, 240, 18, TFT_BLACK);
+        display.setTextColor(TFT_DARKGREY);
+        display.drawString("Technician tool - not for end users", 4, 170);
+      }
 
       app::spiUnlock();
     }
-    vTaskDelay(pdMS_TO_TICKS(150));
+    vTaskDelay(pdMS_TO_TICKS(50));
   }
 }
 
