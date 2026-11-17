@@ -7,9 +7,11 @@
 #include "pins.h"
 #include "../lib/autoac_core/Controller.h"
 #include "ir_learn.h"
+#include "rtc.h"
 #include <DHT.h>
 #include <IRac.h>
 #include <IRsend.h>
+#include <time.h>
 
 static DHT dht(PIN_DHT22, DHT22);
 static autoac::Controller controller(app::settings);
@@ -130,21 +132,51 @@ static bool readDHT(float& outTempC, float& outHumidity) {
 }
 
 // ตารางเรียน: คำนวณว่าตอนนี้อยู่ในคาบไหม, เหลือกี่นาที, อีกกี่นาทีจะเริ่มคาบถัดไป
-// หมายเหตุ: ยังไม่มี RTC จริงต่อ (รอบถัดไป) — ใช้เวลาตั้งแต่บูตเป็นตัวหลอกไปก่อน เพื่อให้คอมไพล์/เทสต์ได้
+// ใช้เวลาจริงจาก DS3231/NTP (time.h) — ถ้ายังไม่รู้เวลาจริง ถือว่า "ไม่อยู่ในคาบ" เสมอ (ไม่รู้เวลา = ไม่ทำอะไรเสี่ยง)
 struct ScheduleNow {
   bool activeNow = false;
   int32_t minutesRemaining = -1;
   int32_t minutesToNext = -1;
 };
 
+static bool systemTimeValid() {
+  return time(nullptr) > 1700000000; // ประมาณปี 2023 ขึ้นไป ถือว่ารู้เวลาจริงแล้ว (เดียวกับ log_sd.cpp)
+}
+
 static ScheduleNow computeScheduleNow(uint32_t /*nowMs*/) {
-  // TODO: ต่อ DS3231 แล้วแทนที่ด้วยเวลาจริง + วันในสัปดาห์จริง (ตอนนี้คืนค่า "ไม่อยู่ในคาบ" เสมอ)
-  return ScheduleNow{};
+  if (!systemTimeValid()) return ScheduleNow{};
+
+  time_t now = time(nullptr);
+  struct tm tminfo;
+  localtime_r(&now, &tminfo);
+  int dayIndex = (tminfo.tm_wday + 6) % 7; // tm_wday: 0=อาทิตย์ → app::schedule: 0=จันทร์..6=อาทิตย์ (ตรงกับ DAY_NAMES ฝั่งเว็บ)
+  int nowMin = tminfo.tm_hour * 60 + tminfo.tm_min;
+
+  ScheduleNow out;
+  for (int slot = 0; slot < 2; slot++) {
+    const autoac::ScheduleSlot& s = app::schedule[dayIndex][slot];
+    if (!s.en) continue;
+    if (nowMin >= s.startMin && nowMin < s.endMin) {
+      out.activeNow = true;
+      out.minutesRemaining = s.endMin - nowMin;
+      return out; // อยู่ในคาบนี้แล้ว ไม่ต้องหาคาบถัดไปต่อ
+    }
+    if (s.startMin > nowMin) {
+      int toStart = s.startMin - nowMin;
+      if (out.minutesToNext < 0 || toStart < out.minutesToNext) out.minutesToNext = toStart;
+    }
+  }
+  return out;
 }
 
 static bool isHolidayToday() {
-  // TODO: ต่อ RTC แล้วเทียบ app::holidays กับวันที่จริง
-  return false;
+  if (!systemTimeValid()) return false; // ไม่รู้เวลา = ไม่ถือว่าเป็นวันหยุด (กันเปิดล่วงหน้าผิดวัน)
+  time_t now = time(nullptr);
+  struct tm tminfo;
+  localtime_r(&now, &tminfo);
+  char ymd[11];
+  strftime(ymd, sizeof(ymd), "%Y-%m-%d", &tminfo);
+  return app::holidays.contains(ymd);
 }
 
 static void applySetSetting(const autoac::Command& cmd) {
@@ -225,6 +257,7 @@ static void controlTaskLoop(void*) {
   dht.begin();
   irLearnBegin();
   irSendDev.begin(); // IRac ของ Protocol mode เรียก begin() ให้เองใน sendAc() แต่ irSendDev (โหมด Learned) ไม่มีใครเรียกให้
+  rtcBegin(); // ตั้งเวลาระบบจาก DS3231 ถ้ามี — ให้ตารางเรียน/วันหยุด/log รู้เวลาได้ทันทีแม้ WiFi ยังไม่ต่อ
 
   uint32_t lastDhtMs = 0;
   float lastTempC = 25, lastHumidity = 50;

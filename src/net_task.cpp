@@ -3,6 +3,7 @@
 #include "net_task.h"
 #include "app.h"
 #include "secrets.h"
+#include "rtc.h"
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
@@ -184,9 +185,14 @@ static void connectMqtt() {
 
 static void netTaskLoop(void*) {
   uint32_t lastTelemetry = 0;
+  bool rtcSynced = false;
   for (;;) {
     connectWifi();
     bool wifiOk = WiFi.status() == WL_CONNECTED;
+    if (wifiOk && !rtcSynced && time(nullptr) > 1700000000) {
+      rtcSyncFromSystemTime(); // NTP sync สำเร็จครั้งแรก — เขียนเวลาที่ได้กลับเข้า DS3231 (no-op ถ้าไม่มี RTC ต่อ)
+      rtcSynced = true;
+    }
     if (wifiOk) {
       connectMqtt();
       if (mqtt.connected()) {
