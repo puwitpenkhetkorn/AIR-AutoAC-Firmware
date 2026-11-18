@@ -8,11 +8,13 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <time.h>
+#include <memory>
 
 static WiFiClient wifiClient;
 static PubSubClient mqtt(wifiClient);
 
 static const uint32_t TELEMETRY_MS = 30000; // SRS ต้องการ 30 วิ (SPEC.md ข้อ 3 — จุดที่เฟิร์มแวร์เดิมผิดคือส่งทุก 60 วิ)
+static void publishSchedule(); // นิยามอยู่ท้าย publishAttributes() เรียกใช้ก่อนประกาศจริง
 
 static void publishTelemetry() {
   const autoac::AcState& ac = app::lastAcState();
@@ -26,6 +28,36 @@ static void publishTelemetry() {
   doc["ac_fan"] = static_cast<int>(ac.fan);
 
   char buf[256];
+  size_t n = serializeJson(doc, buf);
+  mqtt.publish("v1/devices/me/telemetry", (const uint8_t*)buf, n, false);
+}
+
+// AMG8833 heatmap + Rd-01 radar ให้เว็บแสดงเหมือนหน้าจอเครื่องมือช่าง — รอบตัวเองแยกจาก telemetry หลัก (ถี่กว่า เพราะอยากให้เห็นสดๆ)
+static void publishSensorTelemetry() {
+  app::ThermalSnapshot thermal = app::lastThermal();
+  RadarFrame radar = app::lastRadar();
+
+  StaticJsonDocument<640> doc;
+  doc["thermalPresent"] = thermal.present;
+  if (thermal.present) {
+    doc["thermalMax"] = thermal.maxC;
+    doc["thermalMin"] = thermal.minC;
+    // CSV ของพิกเซล 64 ค่า ทศนิยม 1 ตำแหน่ง — เบากว่า JSON array เดิมพอสมควร (ไม่ต้องมี [] กับ , คั่นด้วย comma ซ้ำกัน)
+    char csv[64 * 6] = {0}; // "99.9," x64 เผื่อพอ
+    size_t pos = 0;
+    for (int i = 0; i < app::THERMAL_PIXEL_COUNT; i++) {
+      pos += snprintf(csv + pos, sizeof(csv) - pos, i == 0 ? "%.1f" : ",%.1f", thermal.pixels[i]);
+    }
+    doc["thermalPixels"] = csv;
+  }
+  doc["radarState"] = radar.state;
+  doc["radarMoveDistCm"] = radar.moveDistCm;
+  doc["radarMoveEnergy"] = radar.moveEnergy;
+  doc["radarStaticDistCm"] = radar.staticDistCm;
+  doc["radarStaticEnergy"] = radar.staticEnergy;
+  doc["radarDetectRangeCm"] = radar.detectRangeCm;
+
+  char buf[640];
   size_t n = serializeJson(doc, buf);
   mqtt.publish("v1/devices/me/telemetry", (const uint8_t*)buf, n, false);
 }
@@ -56,9 +88,43 @@ static void publishAttributes() {
            app::irCode(autoac::IrButton::TempDown).learned ? '1' : '0');
   doc["irLearned"] = irLearned;
   doc["irLearnStatus"] = app::lastIrLearnStatus();
-  char buf[256];
-  size_t n = serializeJson(doc, buf);
+  JsonArray holidaysArr = doc["holidays"].to<JsonArray>(); // บั๊กเดิม: ไม่เคยส่งรายการวันหยุดขึ้นเว็บเลย — เว็บอ่านได้แต่ array ว่างเสมอ
+  for (int i = 0; i < app::holidays.count; i++) holidaysArr.add(app::holidays.dates[i]);
+  char buf[1024]; // MAX_HOLIDAYS=32 วันที่ (~14 ไบต์/รายการ) ทำให้ 256 เดิมเล็กไป
+  size_t n = serializeJson(doc, buf, sizeof(buf));
   mqtt.publish("v1/devices/me/attributes", (const uint8_t*)buf, n, false);
+
+  publishSchedule();
+}
+
+// รายการคาบเรียนทั้งหมด — JSON array of arrays แบบย่อ (ไม่ใช้ key ชื่อฟิลด์ ประหยัดขนาด):
+// [id, day, startMin, endMin, validFromDay, validToDay, enabled, name]
+// ใช้งานจริงไม่น่าเกินหลักสิบรายการ/ห้อง แม้ spec เผื่อสูงสุด 350 — ถ้าใช้เกือบเต็มจริงๆ อาจเกิน MQTT buffer ได้ (รู้ข้อจำกัดนี้ไว้)
+static void publishSchedule() {
+  // บัฟเฟอร์ใหญ่ (~16KB รวม) ต้องอยู่บน heap ไม่ใช่ stack — net_task stack มีแค่ 8KB เอง (xTaskCreatePinnedToCore)
+  DynamicJsonDocument doc(8192);
+  JsonArray arr = doc.to<JsonArray>();
+  for (int i = 0; i < autoac::SCHEDULE_MAX_PERIODS; i++) {
+    const autoac::SchedulePeriod& s = app::schedulePeriods[i];
+    if (!s.used) continue;
+    JsonArray row = arr.add<JsonArray>();
+    row.add(i + 1); // id = index+1
+    row.add(s.day);
+    row.add(s.startMin);
+    row.add(s.endMin);
+    row.add(s.validFromDay);
+    row.add(s.validToDay);
+    row.add(s.enabled);
+    row.add(s.name);
+  }
+  std::unique_ptr<char[]> buf(new char[8192]);
+  size_t n = serializeJson(doc, buf.get(), 8192);
+
+  StaticJsonDocument<64> wrap;
+  wrap["schedulePeriods"] = serialized(String(buf.get(), n)); // ส่งเป็น attribute ชื่อเดียว ค่าเป็น JSON string ของ array
+  std::unique_ptr<char[]> wbuf(new char[8300]);
+  size_t wn = serializeJson(wrap, wbuf.get(), 8300);
+  mqtt.publish("v1/devices/me/attributes", (const uint8_t*)wbuf.get(), wn, false);
 }
 
 // ----- รับ RPC สองทาง (`v1/devices/me/rpc/request/+`) แล้วแปลงเป็น autoac::Command เข้า cmdQueue -----
@@ -95,6 +161,10 @@ static void onMqttMessage(char* topic, uint8_t* payload, unsigned int len) {
       }
     } else if (!strcmp(key, "irLearnCancel")) {
       cmd.type = autoac::Command::Type::IrLearnCancel;
+    } else if (!strcmp(key, "irClear")) {
+      int btn = params["value"].as<int>();
+      if (btn < 0 || btn >= autoac::IR_BUTTON_COUNT) known = false;
+      else { cmd.type = autoac::Command::Type::IrClear; cmd.intArg = btn; }
     } else if (!strcmp(key, "calibrateTemp")) {
       cmd.type = autoac::Command::Type::CalibrateTemp;
       cmd.intArg = params["value"].as<int>();
@@ -103,13 +173,25 @@ static void onMqttMessage(char* topic, uint8_t* payload, unsigned int len) {
       strncpy(cmd.strArg, key, sizeof(cmd.strArg) - 1);
       cmd.intArg = params["value"].as<int>();
     }
-  } else if (!strcmp(method, "setSchedule")) {
-    cmd.type = autoac::Command::Type::SetSchedule;
-    cmd.intArg = params["day"].as<int>();
-    cmd.intArg2 = params["slot"].as<int>();
-    // en/start/end อ่านเพิ่มใน control_task ผ่าน strArg เป็น "en,start,end" ง่ายๆ
-    snprintf(cmd.strArg, sizeof(cmd.strArg), "%d,%d,%d",
-             params["en"].as<int>(), params["start"].as<int>(), params["end"].as<int>());
+  } else if (!strcmp(method, "scheduleAdd") || !strcmp(method, "scheduleEdit")) {
+    // params: {id (edit เท่านั้น), day, start, end, validFrom, validTo, enabled, name}
+    // validFrom/validTo เป็นสตริง "YYYY-MM-DD" (ว่าง = ไม่จำกัด) — แปลงเป็น days-since-epoch ที่นี่
+    cmd.type = !strcmp(method, "scheduleAdd") ? autoac::Command::Type::ScheduleAdd : autoac::Command::Type::ScheduleEdit;
+    cmd.intArg = params["id"] | 0; // ใช้เฉพาะ edit
+    cmd.intArg2 = params["day"].as<int>();
+    int validFrom = 0, validTo = 0;
+    int y, m, d;
+    const char* vf = params["validFrom"] | "";
+    if (sscanf(vf, "%d-%d-%d", &y, &m, &d) == 3) validFrom = (int)autoac::daysFromCivil(y, m, d);
+    const char* vt = params["validTo"] | "";
+    if (sscanf(vt, "%d-%d-%d", &y, &m, &d) == 3) validTo = (int)autoac::daysFromCivil(y, m, d);
+    snprintf(cmd.strArg, sizeof(cmd.strArg), "%d,%d,%d,%d,%d",
+             params["start"].as<int>(), params["end"].as<int>(), validFrom, validTo,
+             (params["enabled"] | true) ? 1 : 0);
+    strncpy(cmd.scheduleName, params["name"] | "", sizeof(cmd.scheduleName) - 1);
+  } else if (!strcmp(method, "scheduleDelete")) {
+    cmd.type = autoac::Command::Type::ScheduleDelete;
+    cmd.intArg = params["id"] | 0;
   } else if (!strcmp(method, "addHoliday")) {
     cmd.type = autoac::Command::Type::AddHoliday;
     strncpy(cmd.strArg, params["date"] | "", sizeof(cmd.strArg) - 1);
@@ -173,6 +255,9 @@ static void connectMqtt() {
 
   mqtt.setServer(TB_HOST, TB_PORT);
   mqtt.setCallback(onMqttMessage);
+  // ค่า default (256) เล็กไปสำหรับ telemetry ที่มี thermalPixels (~320 ไบต์) และตารางเรียนคาบเยอะๆ — publish() จะ fail เงียบๆ ถ้าเกิน
+  // 8192 คลุม schedulePeriods ได้หลักสิบรายการสบายๆ (ใช้งานจริงไม่น่าเกินนี้ แม้ spec เผื่อสูงสุด 350 รายการ/ระบบ)
+  mqtt.setBufferSize(8192);
   Serial.println("[net] กำลังเชื่อม ThingsBoard...");
   if (mqtt.connect("AutoAC", TB_DEVICE_TOKEN, nullptr)) {
     mqtt.subscribe("v1/devices/me/rpc/request/+");
@@ -183,8 +268,11 @@ static void connectMqtt() {
   }
 }
 
+static const uint32_t SENSOR_TELEMETRY_MS = 2000; // thermal/radar อยากให้เห็นสดกว่า telemetry หลัก (30s)
+
 static void netTaskLoop(void*) {
   uint32_t lastTelemetry = 0;
+  uint32_t lastSensorTelemetry = 0;
   bool rtcSynced = false;
   for (;;) {
     connectWifi();
@@ -205,6 +293,10 @@ static void netTaskLoop(void*) {
         if (app::consumeAttributesDirty()) {
           publishAttributes(); // แจ้งเว็บทันทีเมื่อ irMode/irLearned/irLearnStatus เปลี่ยน ไม่ต้องรอ reconnect รอบหน้า
         }
+        if (now - lastSensorTelemetry >= SENSOR_TELEMETRY_MS) {
+          lastSensorTelemetry = now;
+          publishSensorTelemetry();
+        }
       }
     }
     app::setNetStatus(wifiOk, mqtt.connected());
@@ -213,5 +305,6 @@ static void netTaskLoop(void*) {
 }
 
 void netTaskStart() {
-  xTaskCreatePinnedToCore(netTaskLoop, "net", 8192, nullptr, 1, nullptr, 0);
+  // เดิม 8192 — ไม่พอแล้วตอนนี้ publishSchedule() มี DynamicJsonDocument(8192)+String ทำงานอยู่ในฟังก์ชันเดียวกัน
+  xTaskCreatePinnedToCore(netTaskLoop, "net", 16384, nullptr, 1, nullptr, 0);
 }

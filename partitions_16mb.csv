@@ -1,0 +1,9 @@
+# ตาราง partition กำหนดเอง — NVS เดิม (0x5000=20KB) เล็กไปสำหรับตารางเรียนแบบใหม่ (สูงสุด 350 คาบ ~14KB)
+# ขยาย NVS เป็น 256KB, ลด spiffs ลง (ไม่ได้ใช้ spiffs ในโปรเจกต์นี้ — log เก็บบน SD แทน) ยังเหลือเนื้อที่เยอะใน flash 16MB
+# Name,     Type, SubType, Offset,   Size,     Flags
+nvs,        data, nvs,     0x9000,   0x40000,
+otadata,    data, ota,     0x49000,  0x2000,
+app0,       app,  ota_0,   0x50000,  0x300000,
+app1,       app,  ota_1,   0x350000, 0x300000,
+spiffs,     data, spiffs,  0x650000, 0x9A0000,
+coredump,   data, coredump,0xFF0000, 0x10000,

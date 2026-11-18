@@ -5,6 +5,7 @@
 #include <freertos/semphr.h>
 #include "../lib/autoac_core/types.h"
 #include "ir_learn.h"
+#include "radar.h"
 
 // สถานะ/ทรัพยากรที่ใช้ร่วมกันหลาย task (กติกาเฟิร์มแวร์ CLAUDE.md ข้อ 1-3)
 namespace app {
@@ -13,7 +14,7 @@ extern QueueHandle_t cmdQueue;       // ทุกคำสั่งจากท�
 extern SemaphoreHandle_t spiMutex;   // จอ+ทัช+SD ใช้ SPI ร่วม
 
 extern autoac::Settings settings;
-extern autoac::Schedule schedule;
+extern autoac::SchedulePeriods schedulePeriods;
 extern autoac::Holidays holidays;
 
 void initShared();
@@ -25,6 +26,15 @@ float lastTempC();
 float lastHumidity();
 bool lastOccupied();
 autoac::AcState lastAcState();
+
+// สแนปช็อตเซนเซอร์เสริม (AMG8833 ภาพความร้อน + Rd-01 radar) — สำหรับขึ้นเว็บ (รูปแบบเดียวกับที่จอเครื่องมือช่างใช้)
+constexpr int THERMAL_PIXEL_COUNT = 64;
+void setLastThermal(const float pixels[THERMAL_PIXEL_COUNT], float maxC, float minC, bool present);
+struct ThermalSnapshot { float pixels[THERMAL_PIXEL_COUNT]; float maxC; float minC; bool present; };
+ThermalSnapshot lastThermal();
+
+void setLastRadar(const RadarFrame& frame);
+RadarFrame lastRadar();
 
 // สถานะระบบ สำหรับหน้าจอเครื่องมือช่าง (ui_task) — net_task เป็นคนเขียน
 void setNetStatus(bool wifiOk, bool tbOk);

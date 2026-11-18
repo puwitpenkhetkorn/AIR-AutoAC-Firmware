@@ -20,11 +20,13 @@ constexpr int IR_BUTTON_COUNT = 4;
 struct Command {
   enum class Type : uint8_t {
     On, Off, SetTemp, SetMode, SetFan, Auto, Manual, Sync, Extend,
-    SetSetting, SetSchedule, AddHoliday, RemoveHoliday, Touch,
+    SetSetting, AddHoliday, RemoveHoliday, Touch,
     HwIrTest, // ปุ่มทดสอบ IR ดิบจากหน้าจอเครื่องมือช่าง — ไม่ผ่าน Controller (intArg: 1=on, 0=off)
     IrLearnStart, // เริ่มเรียนรู้ปุ่ม IR — ไม่ผ่าน Controller (intArg: ค่า IrButton ที่จะเรียนรู้)
     IrLearnCancel, // ยกเลิกการเรียนรู้ที่กำลังทำอยู่ — ไม่ผ่าน Controller (ไม่ใช้ intArg)
+    IrClear, // ลบรหัส IR ที่เรียนรู้ไว้ของปุ่มนี้ทิ้ง — ไม่ผ่าน Controller (intArg: ค่า IrButton)
     CalibrateTemp, // ซิงค์อุณหภูมิที่จำไว้ให้ตรงจอแอร์จริง — ไม่ผ่าน Controller::applyCommand (intArg: อุณหภูมิจริง)
+    ScheduleAdd, ScheduleEdit, ScheduleDelete, // CRUD คาบเรียน (ดู SchedulePeriod ด้านล่าง)
   };
 
   Type type;
@@ -32,7 +34,8 @@ struct Command {
   bool admin = false; // Telegram admin / เว็บบอร์ดใส่รหัส / จอใส่ PIN (SPEC.md ข้อ 2)
   int32_t intArg = 0;
   int32_t intArg2 = 0;
-  char strArg[16] = {0}; // วันที่ addHoliday/removeHoliday, key ของ setSetting
+  char strArg[32] = {0}; // วันที่ addHoliday/removeHoliday, key ของ setSetting, CSV ฟิลด์ตัวเลขของ schedule (ดู applySchedule* ใน control_task.cpp)
+  char scheduleName[24] = {0}; // ชื่อคาบ — ใช้เฉพาะ ScheduleAdd/ScheduleEdit (แยกฟิลด์เพราะอาจมีคอมมาในชื่อ)
 };
 
 // ค่าตั้งที่แก้ได้ (ตรงชื่อ attribute ที่ SRS ต้องการ — ดู SPEC.md ข้อ 1,3)
@@ -45,17 +48,36 @@ struct Settings {
   IrMode irMode = IrMode::Protocol; // โหมดส่ง IR ของห้องนี้
 };
 
-struct ScheduleSlot {
-  bool en = false;
-  uint16_t startMin = 480;  // นาทีจากเที่ยงคืน
-  uint16_t endMin = 1020;
+// คาบเรียน 1 รายการ — รองรับชื่อคาบ + ช่วงวันที่มีผล (ไม่ใช่แค่ enable/disable เฉยๆ แบบเดิม)
+// เก็บเป็น array ขนาดคงที่ (fixed-size sparse): used=false คือช่องว่าง, ลบแล้วเอาไปใช้ซ้ำได้
+// validFromDay/validToDay: จำนวนวันนับจาก 1970-01-01 (0 = ไม่จำกัด) — ใช้ daysFromCivil() แปลงจากวันที่จริง
+constexpr int SCHEDULE_MAX_PERIODS = 350; // สูงสุด 50 คาบ/วัน x 7 วัน
+constexpr int SCHEDULE_NAME_LEN = 24;
+constexpr int SCHEDULE_MAX_PER_DAY = 50;
 
-  ScheduleSlot() = default;
-  ScheduleSlot(bool e, uint16_t s, uint16_t en_) : en(e), startMin(s), endMin(en_) {}
+struct SchedulePeriod {
+  bool used = false;    // false = ช่องว่าง (ไม่ใช่คาบจริง)
+  bool enabled = false;
+  uint8_t day = 0;       // 0=จันทร์..6=อาทิตย์ (ตรงกับ DAY_NAMES ฝั่งเว็บ)
+  uint16_t startMin = 0;
+  uint16_t endMin = 0;
+  uint16_t validFromDay = 0; // 0 = ไม่จำกัดวันเริ่ม
+  uint16_t validToDay = 0;   // 0 = ไม่จำกัดวันสิ้นสุด
+  char name[SCHEDULE_NAME_LEN] = {0};
 };
 
-// ตารางเรียน 7 วัน x 2 ช่วง/วัน
-using Schedule = ScheduleSlot[7][2];
+using SchedulePeriods = SchedulePeriod[SCHEDULE_MAX_PERIODS];
+
+// จำนวนวันนับจาก 1970-01-01 (civil calendar) — อัลกอริทึมของ Howard Hinnant (ไม่ขึ้นกับ timezone/DST)
+// ใช้เทียบ validFromDay/validToDay กับวันที่ปัจจุบัน
+inline int32_t daysFromCivil(int32_t y, uint32_t m, uint32_t d) {
+  y -= m <= 2;
+  const int32_t era = (y >= 0 ? y : y - 399) / 400;
+  const uint32_t yoe = static_cast<uint32_t>(y - era * 400);
+  const uint32_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+  const uint32_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  return era * 146097 + static_cast<int32_t>(doe) - 719468;
+}
 
 constexpr int MAX_HOLIDAYS = 32;
 struct Holidays {

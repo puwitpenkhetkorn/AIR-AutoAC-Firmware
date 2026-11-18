@@ -7,7 +7,7 @@ QueueHandle_t cmdQueue = nullptr;
 SemaphoreHandle_t spiMutex = nullptr;
 
 autoac::Settings settings;
-autoac::Schedule schedule;
+autoac::SchedulePeriods schedulePeriods;
 autoac::Holidays holidays;
 
 static float g_tempC = 0;
@@ -55,6 +55,38 @@ bool lastOccupied() {
 autoac::AcState lastAcState() {
   xSemaphoreTake(g_snapshotMutex, portMAX_DELAY);
   autoac::AcState v = g_ac;
+  xSemaphoreGive(g_snapshotMutex);
+  return v;
+}
+
+static ThermalSnapshot g_thermal{};
+static RadarFrame g_radar{};
+
+void setLastThermal(const float pixels[THERMAL_PIXEL_COUNT], float maxC, float minC, bool present) {
+  xSemaphoreTake(g_snapshotMutex, portMAX_DELAY);
+  memcpy(g_thermal.pixels, pixels, sizeof(g_thermal.pixels));
+  g_thermal.maxC = maxC;
+  g_thermal.minC = minC;
+  g_thermal.present = present;
+  xSemaphoreGive(g_snapshotMutex);
+}
+
+ThermalSnapshot lastThermal() {
+  xSemaphoreTake(g_snapshotMutex, portMAX_DELAY);
+  ThermalSnapshot v = g_thermal;
+  xSemaphoreGive(g_snapshotMutex);
+  return v;
+}
+
+void setLastRadar(const RadarFrame& frame) {
+  xSemaphoreTake(g_snapshotMutex, portMAX_DELAY);
+  g_radar = frame;
+  xSemaphoreGive(g_snapshotMutex);
+}
+
+RadarFrame lastRadar() {
+  xSemaphoreTake(g_snapshotMutex, portMAX_DELAY);
+  RadarFrame v = g_radar;
   xSemaphoreGive(g_snapshotMutex);
   return v;
 }
@@ -107,11 +139,7 @@ void initShared() {
   cmdQueue = xQueueCreate(16, sizeof(autoac::Command));
   spiMutex = xSemaphoreCreateMutex();
 
-  // ตารางเริ่มต้น: ปิดทุกช่วง จนกว่าจะตั้งจากเว็บ/RPC (setSchedule)
-  for (int d = 0; d < 7; d++) {
-    schedule[d][0] = {false, 480, 1020};
-    schedule[d][1] = {false, 480, 1020};
-  }
+  // schedulePeriods เป็น global array — default member initializer ของ SchedulePeriod (used=false ฯลฯ) ใช้ค่าเริ่มต้นอยู่แล้ว ไม่ต้อง init เอง
 
   nvsLoadIrCodes(g_irCodes);
 }

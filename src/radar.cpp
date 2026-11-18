@@ -4,6 +4,7 @@
 
 static HardwareSerial radarSerial(1);
 static bool g_presence = false;
+static RadarFrame g_frame;
 
 // เฟรมรายงานผล (ปกติ ไม่ engineering mode): header 4 + len(2,LE) + [type(1)=0x02 AA(1) target(9) 55(1) check(1)] + footer 4
 // อ้างอิง Rd-01 serial communication protocol V1.0.0 ตาราง 8-12
@@ -20,10 +21,18 @@ void radarBegin() {
 
 static void tryParseTargetData(const uint8_t* payload, size_t len) {
   // payload: type(1) AA(1) target(9) 55(1) check(1) — มีแค่โหมดปกติ (type 0x02) ที่ parse ตอนนี้
+  // target(9) = state(1) move_dist(2,LE) move_energy(1) static_dist(2,LE) static_energy(1) detect_range(2,LE)
   if (len < 11) return;
   if (payload[0] != 0x02 || payload[1] != 0xAA) return;
-  uint8_t targetState = payload[2];
-  g_presence = (targetState != 0x00);
+  const uint8_t* t = &payload[2];
+  g_frame.state = t[0];
+  g_frame.moveDistCm = t[1] | (t[2] << 8);
+  g_frame.moveEnergy = t[3];
+  g_frame.staticDistCm = t[4] | (t[5] << 8);
+  g_frame.staticEnergy = t[6];
+  g_frame.detectRangeCm = t[7] | (t[8] << 8);
+  g_frame.everReceived = true;
+  g_presence = (g_frame.state != 0x00);
 }
 
 void radarPoll() {
@@ -66,3 +75,4 @@ void radarPoll() {
 }
 
 bool radarPresence() { return g_presence; }
+RadarFrame radarLastFrame() { return g_frame; }

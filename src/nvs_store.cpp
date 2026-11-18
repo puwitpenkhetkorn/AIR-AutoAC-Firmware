@@ -33,8 +33,8 @@ void nvsLoadAll() {
   n = prefs.getBytes("irMode", &irModeByte, sizeof(irModeByte));
   app::settings.irMode = (n == sizeof(irModeByte)) ? static_cast<autoac::IrMode>(irModeByte) : autoac::IrMode::Protocol;
 
-  n = prefs.getBytes("schedule", &app::schedule, sizeof(app::schedule));
-  // ถ้าไม่มีของเก่า ใช้ค่าเริ่มต้นที่ initShared() ตั้งไว้แล้ว (ปิดทุกช่วง)
+  prefs.getBytes("schedulePeriods", &app::schedulePeriods, sizeof(app::schedulePeriods));
+  // ถ้าไม่มีของเก่า/ขนาดไม่ตรง getBytes จะไม่เขียนทับ — app::schedulePeriods เป็น global array ที่ default-init ไว้แล้วว่างเปล่า (used=false ทุกช่อง) อยู่แล้ว
 
   n = prefs.getBytes("holidays", &app::holidays, sizeof(app::holidays));
   if (n != sizeof(app::holidays)) app::holidays = autoac::Holidays{};
@@ -53,7 +53,7 @@ void nvsSaveSettings() {
 
 void nvsSaveSchedule() {
   prefs.begin("autoac", false);
-  prefs.putBytes("schedule", &app::schedule, sizeof(app::schedule));
+  prefs.putBytes("schedulePeriods", &app::schedulePeriods, sizeof(app::schedulePeriods));
   prefs.end();
 }
 

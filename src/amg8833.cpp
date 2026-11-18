@@ -27,3 +27,15 @@ bool amg8833DetectPresence() {
   float avg = sum / AMG88xx_PIXEL_ARRAY_SIZE;
   return (maxV - avg) >= kPresenceDeltaC;
 }
+
+bool amg8833ReadFrame(float out[64], float& maxC, float& minC) {
+  if (!g_present) return false;
+  amg.readPixels(out);
+  maxC = out[0];
+  minC = out[0];
+  for (int i = 1; i < AMG88xx_PIXEL_ARRAY_SIZE; i++) {
+    if (out[i] > maxC) maxC = out[i];
+    if (out[i] < minC) minC = out[i];
+  }
+  return true;
+}

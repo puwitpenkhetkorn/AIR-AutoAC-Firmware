@@ -3,6 +3,7 @@
 #include "control_task.h"
 #include "net_task.h"
 #include "ui_task.h"
+#include "web_task.h"
 
 // ตั้ง CS ของ SPI ร่วม (จอ/ทัช/SD) เป็น OUTPUT HIGH เป็นอย่างแรกใน setup() (กติกาข้อ 8)
 // รอบนี้ยังไม่ต่อจอ (ใช้ env autoac_bench, AUTOAC_NO_DISPLAY) — คง guard ไว้เผื่อรอบถัดไปต่อจอจริง
@@ -23,6 +24,7 @@ void setup() {
   controlTaskStart();
   netTaskStart();
   uiTaskStart(); // env autoac_bench: ไม่ต่อจอ — uiTaskStart() เป็น no-op อัตโนมัติ
+  webTaskStart(); // เว็บดู log บน microSD (http://autoac.local/) — task แยก ไม่บล็อก net_task
 }
 
 void loop() {

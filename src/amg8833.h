@@ -7,3 +7,9 @@ void amg8833Begin(); // เรียกครั้งเดียวตอน�
 bool amg8833Present();
 // true ถ้าเจอจุดที่ร้อนกว่าอุณหภูมิห้องเฉลี่ยชัดเจน (น่าจะเป็นคน) — false ถ้าไม่เจอชิปหรือไม่เจอความร้อนคน
 bool amg8833DetectPresence();
+
+constexpr int AMG8833_GRID = 8; // 8x8 พิกเซล
+
+// สำหรับหน้าจอ heatmap บนเครื่อง — อ่านพิกเซลล่าสุด (แถวละ 8 ค่า, 64 ค่ารวม) + max/min ของเฟรมนั้น
+// คืนค่า false ถ้าไม่เจอชิป (out/maxC/minC ไม่ถูกเขียน)
+bool amg8833ReadFrame(float out[64], float& maxC, float& minC);

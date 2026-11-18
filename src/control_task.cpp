@@ -11,6 +11,7 @@
 #include "amg8833.h"
 #include "buzzer.h"
 #include "radar.h"
+#include "status_led.h"
 #include <DHT.h>
 #include <IRac.h>
 #include <IRsend.h>
@@ -152,13 +153,15 @@ static ScheduleNow computeScheduleNow(uint32_t /*nowMs*/) {
   time_t now = time(nullptr);
   struct tm tminfo;
   localtime_r(&now, &tminfo);
-  int dayIndex = (tminfo.tm_wday + 6) % 7; // tm_wday: 0=อาทิตย์ → app::schedule: 0=จันทร์..6=อาทิตย์ (ตรงกับ DAY_NAMES ฝั่งเว็บ)
+  int dayIndex = (tminfo.tm_wday + 6) % 7; // tm_wday: 0=อาทิตย์ → 0=จันทร์..6=อาทิตย์ (ตรงกับ DAY_NAMES ฝั่งเว็บ)
   int nowMin = tminfo.tm_hour * 60 + tminfo.tm_min;
+  int32_t today = autoac::daysFromCivil(tminfo.tm_year + 1900, tminfo.tm_mon + 1, tminfo.tm_mday);
 
   ScheduleNow out;
-  for (int slot = 0; slot < 2; slot++) {
-    const autoac::ScheduleSlot& s = app::schedule[dayIndex][slot];
-    if (!s.en) continue;
+  for (auto& s : app::schedulePeriods) {
+    if (!s.used || !s.enabled || s.day != dayIndex) continue;
+    if (s.validFromDay != 0 && today < s.validFromDay) continue; // ยังไม่ถึงวันเริ่มมีผล
+    if (s.validToDay != 0 && today > s.validToDay) continue;     // เลยวันสิ้นสุดมีผลแล้ว
     if (nowMin >= s.startMin && nowMin < s.endMin) {
       out.activeNow = true;
       out.minutesRemaining = s.endMin - nowMin;
@@ -194,15 +197,72 @@ static void applySetSetting(const autoac::Command& cmd) {
   nvsSaveSettings();
 }
 
-static void applySetSchedule(const autoac::Command& cmd) {
-  int day = cmd.intArg;
-  int slot = cmd.intArg2;
-  if (day < 0 || day > 6 || slot < 0 || slot > 1) return;
-  int en = 0, start = 0, end = 0;
-  if (sscanf(cmd.strArg, "%d,%d,%d", &en, &start, &end) != 3) return;
-  if (start >= end) return; // UI ต้องกันก่อนส่งอยู่แล้ว กันซ้ำที่นี่ด้วย
-  app::schedule[day][slot] = {en != 0, (uint16_t)start, (uint16_t)end};
+// cmd.strArg เข้ารหัสฟิลด์ตัวเลขเป็น CSV: "start,end,validFromDay,validToDay,enabled"
+// cmd.intArg = id (index+1 ใน app::schedulePeriods; 0 = ไม่ใช้/เพิ่มใหม่), cmd.intArg2 = day (0-6)
+static bool parseScheduleCsv(const char* csv, int& start, int& end, int& validFrom, int& validTo, int& enabled) {
+  return sscanf(csv, "%d,%d,%d,%d,%d", &start, &end, &validFrom, &validTo, &enabled) == 5;
+}
+
+static int countUsedForDay(int day) {
+  int n = 0;
+  for (auto& s : app::schedulePeriods) if (s.used && s.day == day) n++;
+  return n;
+}
+
+static void applyScheduleAdd(const autoac::Command& cmd) {
+  int day = cmd.intArg2;
+  int start, end, validFrom, validTo, enabled;
+  if (day < 0 || day > 6) return;
+  if (!parseScheduleCsv(cmd.strArg, start, end, validFrom, validTo, enabled)) return;
+  if (start < 0 || end > 1439 || start >= end) return;
+  if (countUsedForDay(day) >= autoac::SCHEDULE_MAX_PER_DAY) return; // เต็ม 50/วันแล้ว (SPEC ใหม่)
+
+  for (auto& s : app::schedulePeriods) {
+    if (s.used) continue;
+    s = autoac::SchedulePeriod{};
+    s.used = true;
+    s.enabled = enabled != 0;
+    s.day = (uint8_t)day;
+    s.startMin = (uint16_t)start;
+    s.endMin = (uint16_t)end;
+    s.validFromDay = (uint16_t)validFrom;
+    s.validToDay = (uint16_t)validTo;
+    strncpy(s.name, cmd.scheduleName, autoac::SCHEDULE_NAME_LEN - 1);
+    nvsSaveSchedule();
+    app::markAttributesDirty();
+    return;
+  }
+  // ไม่มีช่องว่างเหลือเลย (เต็ม SCHEDULE_MAX_PERIODS ทั้งระบบ) — ทิ้งคำสั่งเงียบๆ เหมือนกรณี >50/วัน
+}
+
+static void applyScheduleEdit(const autoac::Command& cmd) {
+  int id = cmd.intArg;
+  int day = cmd.intArg2;
+  if (id < 1 || id > autoac::SCHEDULE_MAX_PERIODS || day < 0 || day > 6) return;
+  autoac::SchedulePeriod& s = app::schedulePeriods[id - 1];
+  if (!s.used) return;
+  int start, end, validFrom, validTo, enabled;
+  if (!parseScheduleCsv(cmd.strArg, start, end, validFrom, validTo, enabled)) return;
+  if (start < 0 || end > 1439 || start >= end) return;
+
+  s.enabled = enabled != 0;
+  s.day = (uint8_t)day;
+  s.startMin = (uint16_t)start;
+  s.endMin = (uint16_t)end;
+  s.validFromDay = (uint16_t)validFrom;
+  s.validToDay = (uint16_t)validTo;
+  strncpy(s.name, cmd.scheduleName, autoac::SCHEDULE_NAME_LEN - 1);
+  s.name[autoac::SCHEDULE_NAME_LEN - 1] = '\0';
   nvsSaveSchedule();
+  app::markAttributesDirty();
+}
+
+static void applyScheduleDelete(const autoac::Command& cmd) {
+  int id = cmd.intArg;
+  if (id < 1 || id > autoac::SCHEDULE_MAX_PERIODS) return;
+  app::schedulePeriods[id - 1] = autoac::SchedulePeriod{};
+  nvsSaveSchedule();
+  app::markAttributesDirty();
 }
 
 static void applyHoliday(const autoac::Command& cmd, bool add) {
@@ -222,6 +282,7 @@ static void applyHoliday(const autoac::Command& cmd, bool add) {
     }
   }
   nvsSaveHolidays();
+  app::markAttributesDirty(); // บั๊กเดิม: ไม่เคยแจ้งให้ net_task publish holidays ขึ้นเว็บเลย (เว็บเลยเห็นว่างตลอด)
 }
 
 static void applyDecision(const autoac::Controller::Decision& d, const autoac::AcState& before) {
@@ -264,6 +325,7 @@ static void controlTaskLoop(void*) {
   amg8833Begin(); // I2C เดียวกับ DS3231 (ต่อ rtcBegin() เรียก Wire.begin() ไว้แล้ว)
   buzzerBegin();
   radarBegin();
+  statusLedBegin();
 
   uint32_t lastDhtMs = 0;
   float lastTempC = 25, lastHumidity = 50;
@@ -275,7 +337,9 @@ static void controlTaskLoop(void*) {
     autoac::Command cmd;
     while (xQueueReceive(app::cmdQueue, &cmd, 0) == pdTRUE) {
       if (cmd.type == autoac::Command::Type::SetSetting) { applySetSetting(cmd); continue; }
-      if (cmd.type == autoac::Command::Type::SetSchedule) { applySetSchedule(cmd); continue; }
+      if (cmd.type == autoac::Command::Type::ScheduleAdd) { applyScheduleAdd(cmd); continue; }
+      if (cmd.type == autoac::Command::Type::ScheduleEdit) { applyScheduleEdit(cmd); continue; }
+      if (cmd.type == autoac::Command::Type::ScheduleDelete) { applyScheduleDelete(cmd); continue; }
       if (cmd.type == autoac::Command::Type::AddHoliday) { applyHoliday(cmd, true); continue; }
       if (cmd.type == autoac::Command::Type::RemoveHoliday) { applyHoliday(cmd, false); continue; }
       if (cmd.type == autoac::Command::Type::HwIrTest) {
@@ -305,6 +369,17 @@ static void controlTaskLoop(void*) {
       if (cmd.type == autoac::Command::Type::IrLearnCancel) {
         irLearnCancel();
         app::setLastIrLearnStatus("idle");
+        continue;
+      }
+      if (cmd.type == autoac::Command::Type::IrClear) {
+        if (cmd.intArg >= 0 && cmd.intArg < autoac::IR_BUTTON_COUNT) {
+          autoac::IrButton b = static_cast<autoac::IrButton>(cmd.intArg);
+          LearnedIrCode cleared{}; // learned=false, len=0
+          app::setIrCode(b, cleared); // markAttributesDirty() ให้เองข้างใน (ดู app.cpp)
+          nvsSaveIrCode(b, cleared);
+          app::setLastIrLearnStatus("idle");
+          Serial.printf("[ir_learn] ลบรหัสที่เรียนรู้ไว้ของ %s\n", irButtonName(b));
+        }
         continue;
       }
       if (cmd.type == autoac::Command::Type::CalibrateTemp) {
@@ -356,7 +431,15 @@ static void controlTaskLoop(void*) {
     bool pirReady = now - g_pirWarmupStartMs >= 60000;
     bool pirMotion = pirReady && digitalRead(PIN_PIR) == HIGH;
     radarPoll(); // ไม่บล็อก — แค่อ่าน UART ที่มีอยู่แล้วประกอบเฟรม
-    // เจอฝั่งใดฝั่งหนึ่งถือว่ามีคน — PIR จับได้แค่ตอนเคลื่อนไหว กล้องความร้อน/เรดาร์ยังเห็นคนนั่งนิ่งได้
+
+    float thermalPixels[app::THERMAL_PIXEL_COUNT];
+    float thermalMax = 0, thermalMin = 0;
+    bool thermalOk = amg8833ReadFrame(thermalPixels, thermalMax, thermalMin);
+    if (thermalOk) app::setLastThermal(thermalPixels, thermalMax, thermalMin, true);
+    else app::setLastThermal(app::lastThermal().pixels, 0, 0, false);
+    app::setLastRadar(radarLastFrame());
+
+    // เจอฝั่งใดฝั่งหนึ่งถือว่ามีคน — PIR จับได้แค่ตอนเคลื่อนไหว กล้องความร้อน/เรดาร์ยังเห็นคนนั่งนิ่งได้ (ใช้ threshold เดิมจาก amg8833.cpp)
     bool occupied = pirMotion || amg8833DetectPresence() || radarPresence();
     app::setLastSensors(lastTempC, lastHumidity, occupied);
 
@@ -376,6 +459,8 @@ static void controlTaskLoop(void*) {
     autoac::AcState beforeTick = controller.state();
     autoac::Controller::Decision d = controller.tick(in);
     applyDecision(d, beforeTick);
+
+    statusLedUpdate(app::wifiConnected(), app::tbConnected(), controller.state().on, occupied, irLearnActive());
 
     // บี๊บเตือนตอนเริ่มนับถอยหลังจะปิดแอร์อัตโนมัติ (ห้องว่าง/ใกล้หมดคาบ) — บี๊บครั้งเดียวตอนเริ่ม ไม่ใช่รัวทุกวินาที
     static bool wasWarning = false;
