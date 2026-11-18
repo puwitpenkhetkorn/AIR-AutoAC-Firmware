@@ -1,37 +1,48 @@
 # PROGRESS.md — สรุปความคืบหน้า AIR (firmware + web)
 
-อัปเดตล่าสุด: 17 พ.ย. 2026 · repo: `Firmware/AutoAC` (main `001a268`) + `Wabapp` (main `8530e3f`)
+อัปเดตล่าสุด: 19 พ.ย. 2026 · repo: `Firmware/AutoAC` (main `feccea2`) + `Wabapp` (main `4ecf426`)
 
 ## ทำเสร็จและ**ทดสอบกับฮาร์ดแวร์จริงแล้ว**
 
 ### IR Learning (เรียนรู้รีโมทจริง — สำหรับห้องที่แอร์ไม่รองรับโปรโตคอลมาตรฐาน)
 - เรียนรู้ 4 ปุ่ม (เปิด/ปิด/อุณหภูมิ+1/-1) ผ่านหน้าเว็บ "ตั้งค่า" → เก็บรหัส IR ดิบลง NVS
 - ควบคุมเปิด/ปิด/ปรับอุณหภูมิผ่านเว็บได้จริงกับแอร์ Haier จริง (โหมด Learned)
-- แก้บั๊กจากรีวิวรอบ final: รูปแบบรหัส IR ผิด (ต้องแปลง tick→microsecond), `IRsend::begin()` ไม่เคยถูกเรียก, attribute ไม่ sync ให้เว็บทันที, NVS settings หายตอนอัปเกรด, bounds check ปุ่มเรียนรู้, burst timing ของปุ่มอุณหภูมิ
-- ขยาย raw buffer จาก 150 → 400 ช่องสัญญาณ (รีโมทจริงยาว 230 ช่อง — 150 เดิมเล็กไป)
-- เพิ่มคำสั่ง **ซิงค์อุณหภูมิจริง** (`calibrateTemp`) แก้ปัญหาอุณหภูมิที่ซอฟต์แวร์จำไว้เพี้ยนจากของจริง (เพราะนับจากการกด +/- แบบสัมพัทธ์)
-- เว็บ: แก้บั๊ก `/api/tenant/deviceInfos` ใช้ endpoint ผิด (ต้องใช้ `/api/tenant/devices` + ดึง active แยก), แก้อ่าน ThingsBoard attribute ผิด scope (ใช้ SHARED_SCOPE ทั้งที่บอร์ดเขียน CLIENT_SCOPE), แก้ RPC จาก two-way เป็น one-way (ลดดีเลย์การกดปุ่ม), แก้ telemetry ส่งทุก 30 วิ → ส่งทันทีเมื่อสถานะเปลี่ยน
+- **ใหม่วันนี้:** เพิ่มปุ่ม "ลบ" รหัสที่เรียนรู้ไว้ (ต่อปุ่ม) — RPC `setSetting:irClear` + `Command::Type::IrClear` ฝั่งเฟิร์มแวร์
+- เพิ่มคำสั่ง **ซิงค์อุณหภูมิจริง** (`calibrateTemp`) แก้ปัญหาอุณหภูมิที่ซอฟต์แวร์จำไว้เพี้ยนจากของจริง
 
-### จอสัมผัส + หน้าตั้งค่าบนเครื่อง (technician tool)
-- จอ ILI9341 + ทัช XPT2046 ใช้งานได้ (แก้ปัญหาจุดบัดกรี/FPC หลวม — ปัญหาฮาร์ดแวร์ ไม่ใช่โค้ด)
-- แก้บั๊กโค้ด: touch calibration range ผิด (ใส่พิกเซลแทนค่าดิบ ADC), แกน X ของทัชกลับด้าน (กด ON โดนปุ่ม OFF), ลดดีเลย์การตอบสนองทัช
-- เพิ่มหน้า **ตั้งค่าแบบใส่ PIN (1234)** บนจอเครื่อง — ปรับ emptyMin/graceSec/hot/autoOn/preOpenMin ได้โดยไม่ต้องเปิดเว็บ (ทดสอบแล้วว่าค่าที่ปรับขึ้นตรงกับเว็บ)
+### จอสัมผัส + หน้าเครื่องมือช่างบนจอ (technician tool)
+- จอ ILI9341 + ทัช XPT2046 ใช้งานได้ (แก้ปัญหาฮาร์ดแวร์เดิมแล้ว)
+- **ใหม่วันนี้ — ปรับโฟลว์ PIN ใหม่ทั้งหมด:** บูตเครื่องเจอหน้า **สไลด์โชว์โลโก้ CPE/AIR สลับทุก 2 วิ** (Idle) ก่อนเสมอ — แตะจอตรงไหนก็ได้ขึ้นหน้าใส่ PIN (1234) → ใส่ถูกเข้าหน้า Status เต็มสิทธิ์เลย (ไม่ต้องใส่ PIN ซ้ำตอนกด SETTINGS/THERMAL/RADAR) → ไม่มีใครแตะจอเกิน 10 วิ ล็อกกลับไปหน้าสไลด์โชว์อัตโนมัติ
+- **ใหม่วันนี้ — หน้า THERMAL:** heatmap AMG8833 8x8 สี jet-like + MAX/MIN °C
+- **ใหม่วันนี้ — หน้า RADAR:** ป้ายสถานะ (NO TARGET/MOTION/STATIONARY/ทั้งสอง) + แถบพลังงาน/ระยะเคลื่อนไหว-นิ่ง ของ Rd-01
+- สีภาพ push ลงจอ (pushImage) ยังไม่ตรงกับสีจริง 100% (ลองสลับช่องสี R/B และสลับ byte สูง/ต่ำแล้ว ยังไม่ตรงเป๊ะ — ของเดิมที่ค้างอยู่)
 
-### ฮาร์ดแวร์ใหม่ที่เพิ่งต่อวันนี้ — ยืนยันทำงานจริงทุกตัว
-- **DS3231 (นาฬิกาเรียลไทม์):** ตั้งเวลาระบบจาก RTC ได้ตั้งแต่บูต (ไม่ต้องรอ NTP) · ตารางเรียน/วันหยุดที่เคยเป็นแค่ placeholder ตอนนี้คำนวณจากเวลาจริงแล้ว
-- **AMG8833 (กล้องความร้อน 8x8):** ตรวจจับคนในห้องแม่นขึ้น (เห็นคนนั่งนิ่งที่ PIR จับไม่ได้) — รวมกับ PIR แบบ OR
-- **บัซเซอร์:** บี๊บเตือนตอนเริ่มนับถอยหลังปิดแอร์อัตโนมัติ, บี๊บตอนใส่ PIN ผิด · ปัญหาตอนแรกคือสาย GND หลุด ไม่ใช่โค้ด
-- **Ai-Thinker RD-01 (เรดาร์ 24GHz mmWave):** ต่อ UART ที่ IO1(RX)/IO2(TX) @ 256000 baud (ตาม datasheet จริง ไม่ใช่ 115200 ตามโฆษณา) — เห็นคนนิ่งได้แม่นกว่า PIR อีกชั้น รวม OR กับ PIR + AMG8833 เป็นระบบตรวจจับคน 3 ชั้น
+### ฮาร์ดแวร์เสริม — ยืนยันทำงานจริงทุกตัว
+- **DS3231** (นาฬิกาเรียลไทม์), **AMG8833** (กล้องความร้อน), **บัซเซอร์**, **Ai-Thinker RD-01** (เรดาร์ 24GHz) — ตรวจจับคน 3 ชั้น (PIR OR AMG8833 OR เรดาร์)
+- **ใหม่วันนี้ — ไฟสถานะ WS2812B (3 ดวง):** ซ้าย=เน็ต/ThingsBoard (เขียว/เหลือง/แดง), กลาง=แอร์เปิด/ปิด (ฟ้า/ดับ), ขวา=คนในห้อง/กำลังเรียนรู้ IR (เขียว/กะพริบม่วง/ดับ) — ตามสเปก PCB ดวงขวาจริงๆ ควรเป็น "ไฟเลี้ยง" (สีขาวเสมอ) ไม่ใช่คนในห้อง ยังไม่ได้แก้ตรงนี้
 
-### หน้าจอเครื่องมือช่าง + ไฟสถานะ — เพิ่มใหม่
-- **หน้า THERMAL/RADAR บนจอเครื่อง** (ใส่ PIN 1234 เข้าเหมือน SETTINGS): heatmap AMG8833 8x8 สี jet + MAX/MIN, หน้า radar Rd-01 (state/ระยะ/พลังงาน)
-- **ขึ้นเว็บ:** การ์ด "เซนเซอร์เสริม" ในหน้า Room แสดง heatmap + radar เหมือนจอเครื่อง — แก้บั๊ก PubSubClient buffer เริ่มต้น 256 ไบต์เล็กไป (thermalPixels CSV ~320 ไบต์ ทำให้ publish ทั้งก้อน fail เงียบๆ) → เพิ่มเป็น 1024
-- **ไฟสถานะ WS2812B (3 ดวง):** ซ้าย=เน็ต/ThingsBoard (เขียว/เหลือง/แดง), กลาง=แอร์เปิด/ปิด (ฟ้า/ดับ), ขวา=คนในห้อง/กำลังเรียนรู้ IR (เขียว/กะพริบม่วง/ดับ)
+### หน้าเว็บ — เซนเซอร์เสริม
+- **ใหม่วันนี้:** หน้า Room มีการ์ด "เซนเซอร์เสริม" แสดง heatmap AMG8833 + ข้อมูลเรดาร์เหมือนจอเครื่อง (บั๊กที่เจอ: PubSubClient buffer default 256 ไบต์เล็กไป publish() fail เงียบๆ ตอนมี thermalPixels → เพิ่มเป็น 8192)
+
+### เว็บเซิร์ฟเวอร์ในตัวบอร์ด (ใหม่ทั้งหมดวันนี้)
+- `http://autoac.local/` (หรือ IP บอร์ดตรงๆ) — ดูไฟล์ log บน microSD ผ่านเว็บ (`sensor_*.csv` / `event_*.csv`)
+- API สำหรับเว็บ Wabapp ดึงไปใช้เอง: `/api/files` (JSON รายชื่อไฟล์), `/api/csv?name=...` (เนื้อ CSV ดิบ) — เปิด CORS ให้ fetch ข้าม origin ได้ (ใช้ได้เฉพาะตอนอยู่วง LAN เดียวกับบอร์ด)
+- เว็บ: หน้า "ตั้งค่า → Log บน microSD" (ฝัง iframe ของเว็บบอร์ด) + หน้า "ประวัติ" ตอนนี้ดึงจาก ThingsBoard **และ** SD การ์ดมา merge กัน (SD ละเอียดกว่า บันทึกทุก 1 นาที)
+- บั๊กที่เจอระหว่างทำ: `WebServer::begin()`/`MDNS.begin()` เรียกก่อน WiFi stack พร้อม → lwIP assert บูตวนไม่มี log เลย (แก้โดยรอ `app::wifiConnected()` ก่อน)
+
+### ตารางเรียนแบบใหม่ (ใหม่ทั้งหมดวันนี้ — เปลี่ยน data model)
+- จากเดิม fix 2 ช่วง/วัน ไม่มีชื่อ ไม่มีช่วงวันที่มีผล → ตอนนี้เป็น **คาบเรียนแบบมีชื่อ, ช่วงวันที่มีผล (validFrom/validTo), สูงสุด 50 คาบ/วัน** (รวมสูงสุด 350 คาบทั้งระบบ)
+- RPC ใหม่: `scheduleAdd` / `scheduleEdit` / `scheduleDelete` — sync ขึ้นเว็บผ่าน attribute `schedulePeriods`
+- เว็บ: หน้าตารางเรียนออกแบบใหม่ทั้งหมด (day-pill เลือกวัน, การ์ดคาบ, ฟอร์ม bottom sheet, นับ "ใช้ไป X/50")
+- หน้าวันหยุดก็เปลี่ยนเป็นปฏิทินรายเดือนจริง (เดิมเป็นแค่ลิสต์เพิ่ม/ลบวันที่)
+- **บั๊กใหญ่ที่เจอและแก้ระหว่างทาง:** NVS เดิมมีแค่ 20KB เล็กเกินไปสำหรับตารางใหม่ → ต้องทำ custom partition table ขยายเป็น 256KB ซึ่งเจอต่อว่า **PlatformIO ไม่ได้อ่าน offset ของ app0 จาก partitions.csv เอง** (hardcode 0x10000 เป็น default) ทำให้ย้าย app0 ไปที่อื่นแล้วบอร์ด boot loop ไม่มี log เลย ต้องตั้ง `board_upload.offset_address` เองให้ตรงกับตารางใหม่ — แก้แล้วบูตปกติ
+- **บั๊กที่เจอและแก้คู่กัน:** วันหยุด (`holidays`) ไม่เคยถูก publish ขึ้น ThingsBoard เลยตั้งแต่แรก (เว็บเห็นว่างตลอดแม้เพิ่มสำเร็จฝั่งบอร์ด) — แก้ให้ `markAttributesDirty()` ตอน add/remove holiday และเพิ่ม `holidays` เข้า `publishAttributes()`
+- **ผลข้างเคียงของการเปลี่ยน partition:** ต้อง full chip erase ระหว่างทาง ทำให้ settings/IR codes/ตารางเดิมหายหมด ต้องตั้งค่าใหม่
 
 ## ยังไม่ได้เริ่ม / ค้างอยู่
 - **Telegram control channel** — ยังไม่เขียน
-- **Web server ในตัวบอร์ด** (`autoac.local`) — ยังไม่เขียน
 - **Factory reset** — ยังไม่เขียน
+- **แอปมือถือ (mobile app)** — ยังไม่เริ่มเลย ตอนนี้มีแต่เว็บ (responsive) ยังไม่ได้ทำเป็นแอปจริง (เช่น ผ่าน React Native/Capacitor หรือ native)
 - **ยังไม่เคย push ขึ้น GitHub เลยทั้ง 2 repo** — มีแต่ local git, ยังไม่มี remote
 
 ## ตัดออกจากสโคป (ตัดสินใจแล้ว)
@@ -40,40 +51,29 @@
 - **ทดสอบระยะยิง IR ≥ 8m** (NFR-09) — ตัดออก เพราะทดสอบจริงแล้วผ่าน
 
 ## สิ่งที่ควรรู้/ระวังต่อ
-- บัฟเฟอร์เรียนรู้ IR (400 ช่อง) เผื่อไว้พอสำหรับรีโมทที่เจอจริง (230 ช่อง) แต่ถ้าเจอรีโมทที่ยาวกว่านี้มากอาจต้องขยายอีก
-- หน้าจอ technician tool "ปุ่มทดสอบ IR ดิบ" (`HwIrTest`) ใช้โปรโตคอล `HAIER_AC176` เสมอ ไม่สนใจว่าห้องตั้ง Learned mode ไว้หรือไม่ — ใช้ไม่ได้กับแอร์ที่ไม่ใช่โปรโตคอลนี้ (พบจากการทดสอบจริง: แอร์เครื่องที่ทดสอบไม่รองรับ จึงต้องพึ่ง Learned mode แทน)
-- สายไฟ GND ของอุปกรณ์เสริม (บัซเซอร์ เป็นต้น) ต้องเช็คให้ครบวงจรก่อนสรุปว่าโค้ด/GPIO มีปัญหา
+- **สีภาพบนจอ (splash screen) ยังไม่ตรง** — ลองทั้งสลับ R/B และสลับ byte บน/ล่างของค่าสี RGB565 แล้วยังไม่ตรง ต้องสืบเพิ่ม (อาจต้องดูว่า LovyanGFX panel นี้ตั้ง `rgb_order` ไว้ยังไงจริงๆ หรือทดสอบแบบ pixel เดี่ยวๆ ไล่สีทีละสีเพื่อหาสูตรที่ถูก)
+- **ไฟ WS2812B ดวงขวา** ตามสเปก PCB จริงๆ คือ "ไฟเลี้ยง" (ควรติดขาวเสมอตอนมีไฟ) แต่โค้ดตอนนี้ยังผูกกับคนในห้อง/โหมดเรียนรู้ IR อยู่ — ของเดิมที่คุยไว้แล้วยังไม่ได้แก้
+- **เว็บเซิร์ฟเวอร์ในบอร์ด + หน้าประวัติ SD** ใช้ได้เฉพาะตอนเครื่องที่เปิดเว็บอยู่ในวง WiFi เดียวกับบอร์ดเท่านั้น (ไม่ผ่านอินเทอร์เน็ต/ThingsBoard)
+- ตารางเรียนสเปกเผื่อสูงสุด 350 คาบทั้งระบบ แต่ถ้าใช้เกือบเต็มจริงๆ attribute `schedulePeriods` อาจมีขนาดใหญ่เกิน MQTT buffer (8192) ได้ — ใช้งานจริงไม่น่าเกินหลักสิบรายการต่อห้องจึงไม่น่าเจอ แต่รู้ข้อจำกัดนี้ไว้
+- partition table เปลี่ยนที่ `partitions_16mb.csv` + ต้องมี `board_upload.offset_address` ใน `platformio.ini` คู่กันเสมอ ถ้าแก้ offset ของ app0/app1 อีกในอนาคต อย่าลืมแก้ค่านี้ด้วย ไม่งั้นบอร์ด boot loop แบบไม่มี log เลย
 
-## Commit log วันนี้
+## Commit ล่าสุด (วันนี้)
 
 ### Firmware (`Firmware/AutoAC`, branch `main`)
 ```
+feccea2 feat: thermal/radar UI, status LEDs, onboard web server, schedule periods
 001a268 feat(hw): add Ai-Thinker RD-01 24GHz mmWave radar presence detection
 fc5f596 fix(buzzer): replace tone()/noTone() with manual GPIO bit-banging
 0227306 feat(hw): add AMG8833 thermal presence detection and buzzer alerts
 dafc28d feat(rtc): add DS3231 real-time clock support for schedule/holiday logic
 2957423 feat(ui): add PIN-gated on-device settings screen (1234)
-5a75cc8 fix(ui): invert touch X axis and separate touch-poll/redraw cadence
-d520bac fix(display): touch x_min/x_max/y_min/y_max were set to pixel coords instead of raw ADC range
-046bf3c fix(ir-learn): publish telemetry immediately on AC state change instead of waiting up to 30s
-b5650f3 feat(ir-learn): add calibrateTemp command to fix real-vs-tracked temperature drift
-0eba6ee fix(ir-learn): expand raw capture buffer from 150 to 400 samples
-5c3c086 fix(ir-learn): fix raw-code format, missing IRsend begin(), attribute scope/timing, NVS settings reset, button bounds check, and burst timing
-90000fe feat(ir-learn): bridge learn commands and status to ThingsBoard
-37cfb5d feat(ir-learn): wire learn dispatch and Learned-mode IR send into Control task
-29e6f4a feat(ir-learn): add shared learned-IR-code state
-bd563f7 feat(ir-learn): persist learned IR codes in NVS
-02f3a64 feat(ir-learn): add non-blocking IR learn capture module
-701bdde feat(ir-learn): add IrMode/IrButton types and learn command types
-405cef4 chore: initial commit of existing firmware before IR-learning feature
+... (ดูรายการเต็มด้วย git log)
 ```
 
 ### Web (`Wabapp`, branch `main`)
 ```
+4ecf426 feat: sensor panel, SD log viewer, schedule periods, holidays calendar, IR clear
 8530e3f feat(ir-learn): add sync-real-temperature control to Room page for learned-mode rooms
 6344fb9 fix(ir-learn): read ThingsBoard CLIENT_SCOPE attributes instead of SHARED_SCOPE
-0c2c7ae fix(ir-learn): admin-gate Cancel button and disable other Learn buttons while one is listening (review I3/M3)
-623d78f feat(ir-learn): add IR learn UI and hide mode/fan for learned-mode rooms
-965aeac feat(ir-learn): read IR learn attributes into telemetry hook
-a7e4f17 chore: initial commit of existing web app before IR-learning feature
+... (ดูรายการเต็มด้วย git log)
 ```
