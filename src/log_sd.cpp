@@ -9,6 +9,8 @@
 static bool g_sdOk = false;
 static uint32_t g_lastSensorLogMs = 0;
 
+bool sdPresent() { return g_sdOk; }
+
 bool logTimeValid() {
   time_t now = time(nullptr);
   return now > 1700000000; // ประมาณปี 2023 ขึ้นไป ถือว่า NTP sync แล้ว

@@ -101,6 +101,10 @@ void setNetStatus(bool wifiOk, bool tbOk) {
 bool wifiConnected() { return g_wifiOk; }
 bool tbConnected() { return g_tbOk; }
 
+static bool g_dhtOk = false;
+void setDhtOk(bool ok) { g_dhtOk = ok; }
+bool dhtOk() { return g_dhtOk; }
+
 static LearnedIrCode g_irCodes[autoac::IR_BUTTON_COUNT];
 
 const LearnedIrCode& irCode(autoac::IrButton b) { return g_irCodes[(int)b]; }

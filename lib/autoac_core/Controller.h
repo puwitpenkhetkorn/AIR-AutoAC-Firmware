@@ -246,7 +246,7 @@ class Controller {
 
   uint32_t pirWarmupSec() const { return 60u; }
   uint32_t manualOverrideMs() const { return demo_ ? 15000u : 30u * 60000u; }
-  uint32_t spamGuardMs() const { return 10000u; }
+  uint32_t spamGuardMs() const { return 5000u; } // กันคอมเพรสเซอร์พัง (เปิด/ปิดถี่เกินไป) — ผู้ใช้ขอลดจาก 10 วิ
 
   bool spamOk(uint32_t nowMs) { return elapsed(nowMs, lastCmdMs_) >= spamGuardMs(); }
 

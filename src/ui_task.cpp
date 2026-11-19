@@ -13,12 +13,14 @@ void uiTaskStart() {} // env autoac_bench: ไม่ต่อจอ — ข้�
 #include "buzzer.h"
 #include "amg8833.h"
 #include "radar.h"
+#include "rtc.h"
+#include "log_sd.h"
 #include "splash_cpe.h"
 #include "splash_air.h"
 
 static LGFX display;
 
-enum class UiScreen { Idle, Status, Pin, Settings, Thermal, Radar };
+enum class UiScreen { Idle, Status, Pin, Settings, Thermal, Radar, Sensors };
 static UiScreen g_screen = UiScreen::Idle; // บูตมาเจอสไลด์โชว์โลโก้ก่อนเสมอ — ต้องแตะจอถึงจะขึ้นหน้าใส่ PIN
 static uint32_t g_lastTouchMs = 0; // ไม่มีใครแตะจอเกิน 10 วิ (ทุกหน้ายกเว้น Idle) -> ล็อกกลับไปหน้า Idle อัตโนมัติ
 constexpr uint32_t kAutoLockMs = 10000;
@@ -31,9 +33,11 @@ static Btn BTN_OFF{125, 260, 105, 50, "IR OFF", TFT_MAROON};
 static Btn BTN_OPEN_SETTINGS{10, 170, 220, 24, "SETTINGS", TFT_NAVY};
 static Btn BTN_OPEN_THERMAL{10, 200, 105, 30, "THERMAL", TFT_PURPLE};
 static Btn BTN_OPEN_RADAR{125, 200, 105, 30, "RADAR", TFT_ORANGE};
+static Btn BTN_OPEN_SENSORS{10, 234, 220, 22, "SENSOR CHECK", TFT_DARKCYAN};
 static void drawThermalScreen(); // นิยามอยู่ท้ายไฟล์ — handlePinTouch เรียกใช้ก่อนที่จะประกาศจริง
 static void drawRadarScreen();
 static void drawStatusScreen();
+static void drawSensorsScreen();
 
 static void drawButton(const Btn& b) {
   display.fillRoundRect(b.x, b.y, b.w, b.h, 8, b.color);
@@ -226,6 +230,7 @@ static void drawStatusScreen() {
   drawButton(BTN_OPEN_SETTINGS);
   drawButton(BTN_OPEN_THERMAL);
   drawButton(BTN_OPEN_RADAR);
+  drawButton(BTN_OPEN_SENSORS);
 }
 
 // ---------------- หน้า AMG8833 heatmap (กล้องความร้อน 8x8) ----------------
@@ -363,6 +368,46 @@ static void handleRadarTouch(int16_t tx, int16_t ty) {
   if (inside(BTN_RADAR_BACK, tx, ty)) { g_screen = UiScreen::Status; }
 }
 
+// ---------------- หน้าเช็คเซนเซอร์ทั้งหมด (SENSOR CHECK) ----------------
+
+static Btn BTN_SENSORS_BACK{5, 5, 60, 30, "BACK", TFT_MAROON};
+
+static void drawSensorRow(int y, const char* label, bool known, bool ok, const char* okText, const char* failText) {
+  display.fillRect(0, y, 240, 24, TFT_BLACK);
+  display.setTextDatum(top_left);
+  display.setTextColor(TFT_DARKGREY);
+  display.drawString(label, 6, y + 4);
+  display.setTextColor(known ? (ok ? TFT_GREEN : TFT_RED) : TFT_YELLOW);
+  display.setTextDatum(top_right);
+  display.drawString(known ? (ok ? okText : failText) : "N/A", 234, y + 4);
+}
+
+static void drawSensorsScreen() {
+  display.fillScreen(TFT_BLACK);
+  display.setTextColor(TFT_CYAN);
+  display.setTextDatum(top_left);
+  display.drawString("Sensor Check", 75, 20);
+  drawButton(BTN_SENSORS_BACK);
+
+  int y = 50;
+  drawSensorRow(y, "WiFi", true, app::wifiConnected(), "OK", "FAIL");          y += 26;
+  drawSensorRow(y, "ThingsBoard", true, app::tbConnected(), "OK", "FAIL");     y += 26;
+  drawSensorRow(y, "DHT22 (temp/hum)", true, app::dhtOk(), "OK", "FAIL");      y += 26;
+  drawSensorRow(y, "PIR motion", true, true, app::lastOccupied() ? "HIGH" : "LOW", "FAIL"); y += 26;
+  drawSensorRow(y, "AMG8833 (thermal)", true, amg8833Present(), "OK", "NOT FOUND"); y += 26;
+  drawSensorRow(y, "DS3231 (RTC)", true, rtcPresent(), "OK", "NOT FOUND");     y += 26;
+  drawSensorRow(y, "Rd-01 (radar)", true, app::lastRadar().everReceived, "OK", "NO DATA"); y += 26;
+  drawSensorRow(y, "microSD", true, sdPresent(), "OK", "NOT FOUND");           y += 26;
+
+  display.setTextDatum(top_left);
+  display.setTextColor(TFT_DARKGREY);
+  display.drawString("IR TX/RX, buzzer, touch: ไม่มี self-test อัตโนมัติ", 6, y + 8);
+}
+
+static void handleSensorsTouch(int16_t tx, int16_t ty) {
+  if (inside(BTN_SENSORS_BACK, tx, ty)) { g_screen = UiScreen::Status; }
+}
+
 static void uiTaskLoop(void*) {
   pinMode(PIN_LCD_BACKLIGHT, OUTPUT);
   digitalWrite(PIN_LCD_BACKLIGHT, HIGH); // backlight เป็น GPIO แยก (IO21) ไม่ใช่ต่อไฟตรง — ต้องสั่งเปิดเอง
@@ -403,12 +448,14 @@ static void uiTaskLoop(void*) {
             else if (inside(BTN_OPEN_SETTINGS, tx, ty)) { enterSettingsScreen(); }
             else if (inside(BTN_OPEN_THERMAL, tx, ty)) { g_screen = UiScreen::Thermal; drawThermalScreen(); }
             else if (inside(BTN_OPEN_RADAR, tx, ty)) { g_screen = UiScreen::Radar; drawRadarScreen(); }
+            else if (inside(BTN_OPEN_SENSORS, tx, ty)) { g_screen = UiScreen::Sensors; drawSensorsScreen(); }
             break;
           }
           case UiScreen::Pin: handlePinTouch(tx, ty); break;
           case UiScreen::Settings: handleSettingsTouch(tx, ty); break;
           case UiScreen::Thermal: handleThermalTouch(tx, ty); break;
           case UiScreen::Radar: handleRadarTouch(tx, ty); break;
+          case UiScreen::Sensors: handleSensorsTouch(tx, ty); break;
         }
         // เปลี่ยนหน้าแบบ "BACK" กลับ Status ต้องวาดใหม่ทั้งจอ (handleSettingsTouch อาจตั้ง g_screen=Status)
         if (screenBefore != UiScreen::Status && g_screen == UiScreen::Status && screenBefore != UiScreen::Pin) drawStatusScreen();
@@ -436,6 +483,10 @@ static void uiTaskLoop(void*) {
       if (g_screen == UiScreen::Radar && now - lastRedrawMs >= 300) {
         lastRedrawMs = now;
         drawRadarScreen();
+      }
+      if (g_screen == UiScreen::Sensors && now - lastRedrawMs >= 500) {
+        lastRedrawMs = now;
+        drawSensorsScreen();
       }
       if (g_screen == UiScreen::Status && now - lastRedrawMs >= 500) {
         lastRedrawMs = now;

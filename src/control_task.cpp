@@ -425,6 +425,7 @@ static void controlTaskLoop(void*) {
       float t, h;
       dhtOk = readDHT(t, h);
       if (dhtOk) { lastTempC = t; lastHumidity = h; }
+      app::setDhtOk(dhtOk);
       // TODO: ถ้า !dhtOk ให้ใช้อุณหภูมิจาก DS3231 แสดงผลแทน (รอบถัดไปเมื่อต่อ RTC)
     }
 

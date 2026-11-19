@@ -41,6 +41,10 @@ void setNetStatus(bool wifiOk, bool tbOk);
 bool wifiConnected();
 bool tbConnected();
 
+// สถานะ DHT22 อ่านค่าได้ล่าสุดไหม — Control task เขียน, ui_task อ่าน (สำหรับหน้าเช็คเซนเซอร์)
+void setDhtOk(bool ok);
+bool dhtOk();
+
 // รหัส IR ที่เรียนรู้มา — Control task เป็นคนเขียน, net_task อ่านอย่างเดียว
 const LearnedIrCode& irCode(autoac::IrButton b);
 void setIrCode(autoac::IrButton b, const LearnedIrCode& code);
