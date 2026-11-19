@@ -461,13 +461,13 @@ static void controlTaskLoop(void*) {
     autoac::Controller::Decision d = controller.tick(in);
     applyDecision(d, beforeTick);
 
-    statusLedUpdate(app::wifiConnected(), app::tbConnected(), controller.state().on, occupied, irLearnActive());
-
     // บี๊บเตือนตอนเริ่มนับถอยหลังจะปิดแอร์อัตโนมัติ (ห้องว่าง/ใกล้หมดคาบ) — บี๊บครั้งเดียวตอนเริ่ม ไม่ใช่รัวทุกวินาที
     static bool wasWarning = false;
     bool isWarning = controller.warnActive();
     if (isWarning && !wasWarning) buzzerBeep();
     wasWarning = isWarning;
+
+    statusLedUpdate(app::wifiConnected(), app::tbConnected(), app::dhtOk(), isWarning, irLearnActive());
 
     logTick();
 
