@@ -40,15 +40,21 @@
 - **ผลข้างเคียงของการเปลี่ยน partition:** ต้อง full chip erase ระหว่างทาง ทำให้ settings/IR codes/ตารางเดิมหายหมด ต้องตั้งค่าใหม่
 
 ## ยังไม่ได้เริ่ม / ค้างอยู่
-- **Telegram control channel** — ยังไม่เขียน
-- **Factory reset** — ยังไม่เขียน
-- **แอปมือถือ (mobile app)** — ยังไม่เริ่มเลย ตอนนี้มีแต่เว็บ (responsive) ยังไม่ได้ทำเป็นแอปจริง (เช่น ผ่าน React Native/Capacitor หรือ native)
-- **ยังไม่เคย push ขึ้น GitHub เลยทั้ง 2 repo** — มีแต่ local git, ยังไม่มี remote
+- ไม่มี — ทุกหัวข้อที่เคยค้างถูกตัดออกจากสโคปแล้ว (ดูหัวข้อถัดไป) หรือทำเสร็จแล้ว
 
 ## ตัดออกจากสโคป (ตัดสินใจแล้ว)
 - **หน้าจอผู้ใช้ทั่วไปแบบเต็ม** (นอกจาก technician tool) — ไม่ทำ
 - **ทดสอบ 24 ชม. ต่อเนื่อง** — ตัดออก
 - **ทดสอบระยะยิง IR ≥ 8m** (NFR-09) — ตัดออก เพราะทดสอบจริงแล้วผ่าน
+- **Telegram control channel** — ตัดออก
+- **Factory reset** — ตัดออก
+- **ปรับแต่งแอปมือถือเพิ่มเติม** (ไอคอน/splash ของแอป, ทดสอบบนเครื่องจริง) — ตัดออก (ตัว Capacitor shell ที่รันได้แล้วถือว่าเพียงพอ)
+
+## GitHub + deploy
+- Firmware: https://github.com/puwitpenkhetkorn/AIR-AutoAC-Firmware (public)
+- Web: https://github.com/puwitpenkhetkorn/AIR-AutoAC-Web (public)
+- เว็บ deploy ขึ้น GitHub Pages แล้ว: https://puwitpenkhetkorn.github.io/AIR-AutoAC-Web/ (ใช้งานได้จากนอกเครือข่ายโรงเรียน ยกเว้นฟีเจอร์ที่ต้องอยู่ LAN เดียวกับบอร์ด เช่น SD log)
+- โลโก้แอป/เว็บเปลี่ยนเป็นโลโก้ AIR ทางการแล้ว (`public/logo.jpg`)
 
 ## สิ่งที่ควรรู้/ระวังต่อ
 - **เว็บเซิร์ฟเวอร์ในบอร์ด + หน้าประวัติ SD** ใช้ได้เฉพาะตอนเครื่องที่เปิดเว็บอยู่ในวง WiFi เดียวกับบอร์ดเท่านั้น (ไม่ผ่านอินเทอร์เน็ต/ThingsBoard)
