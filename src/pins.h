@@ -34,6 +34,8 @@
 #define PIN_WS2812B        48 // ใช้ RMT (core 2.x API)
 #define PIN_BUZZER         38
 
-// เรดาร์ Ai-Thinker Rd-01 (24GHz mmWave) — UART ต่อ ESP32 IO1/IO2
-#define PIN_RADAR_RX       1 // ESP32 รับ ← Rd-01 ส่ง (TX ของโมดูล)
-#define PIN_RADAR_TX       2 // ESP32 ส่ง → Rd-01 รับ (RX ของโมดูล) — ใช้เวลาจะสั่ง config command เท่านั้น
+// เรดาร์ Ai-Thinker Rd-01 (24GHz mmWave) — UART ต่อ ESP32 IO39/IO40
+// (เดิมคิดจะย้ายไป IO35/37 แต่ขานั้นชนกับ PSRAM แบบ Octal ของบอร์ดนี้ — ห้ามใช้ ดู comment หัวไฟล์)
+// สายจริงที่ต่อไว้: โมดูล RX -> GPIO39, โมดูล TX -> GPIO40 (สลับกับที่คิดไว้ตอนแรก) — เลยต้องตั้ง RX/TX ของ ESP32 สลับตามให้ตรง
+#define PIN_RADAR_RX       40 // ESP32 รับ ← Rd-01 TX (ต่ออยู่ที่ GPIO40 จริง)
+#define PIN_RADAR_TX       39 // ESP32 ส่ง → Rd-01 RX (ต่ออยู่ที่ GPIO39 จริง) — ใช้เวลาจะสั่ง config command เท่านั้น
