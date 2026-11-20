@@ -98,20 +98,27 @@ class Controller {
     }
 
     // ----- กฎปิดตามเวลา: จบคาบเรียน (เตือนก่อนหมดเวลาเหมือนกฎห้องว่าง) -----
+    // บั๊กเดิม: เช็ค scheduleSlotActiveNow && minutesSlotRemaining==0 พร้อมกัน ซึ่งเป็นไปไม่ได้จริง
+    // (พอเหลือ 0 นาที คาบก็ถือว่าจบไปแล้ว activeNow จะเป็น false ไปก่อนแล้วเสมอ เลยไม่เคยปิดได้เลย)
+    // แก้ด้วยการจับจังหวะ "คาบเพิ่งเปลี่ยนจาก active เป็นไม่ active" แทน
     if (ac_.on && !manualActive && !manualOnly_ && in.scheduleSlotActiveNow && in.minutesSlotRemaining >= 0) {
       uint32_t graceSec = demo_ ? 20 : settings_.graceSec;
-      if ((uint32_t)in.minutesSlotRemaining * 60u <= graceSec && in.minutesSlotRemaining >= 0) {
-        if (in.minutesSlotRemaining == 0) {
-          if (sendOff(d, in.nowMs, Source::Schedule, "หมดเวลาคาบเรียน")) return d;
-        } else {
-          scheduleWarnActive_ = true;
-        }
+      if ((uint32_t)in.minutesSlotRemaining * 60u <= graceSec) {
+        scheduleWarnActive_ = true;
       } else {
         scheduleWarnActive_ = false;
       }
     } else {
       scheduleWarnActive_ = false;
     }
+
+    if (ac_.on && !manualActive && !manualOnly_ && wasScheduleSlotActive_ && !in.scheduleSlotActiveNow) {
+      if (sendOff(d, in.nowMs, Source::Schedule, "หมดเวลาคาบเรียน")) {
+        wasScheduleSlotActive_ = in.scheduleSlotActiveNow;
+        return d;
+      }
+    }
+    wasScheduleSlotActive_ = in.scheduleSlotActiveNow;
 
     // ----- กฎเปิดเมื่อร้อน: >= hot ต่อเนื่อง 2 นาที + มี PIR จริงใน 15 นาที + เว้น 3 นาที -----
     if (!manualActive && !manualOnly_ && settings_.autoOn && in.tempValid) {
@@ -131,10 +138,12 @@ class Controller {
       }
     }
 
-    // ----- กฎเปิดล่วงหน้า: ก่อนคาบเรียน preOpenMin นาที, ร้อนกว่า autoOn, ไม่ใช่วันหยุด, โหมด Auto -----
-    if (!manualActive && !manualOnly_ && !ac_.on && !in.isHoliday && settings_.autoOn && in.tempValid &&
+    // ----- กฎเปิดล่วงหน้า: ก่อนคาบเรียน preOpenMin นาที, ไม่ใช่วันหยุด, โหมด Auto -----
+    // (ผู้ใช้ขอตัดเงื่อนไข "ต้องมีคนในห้อง", "ต้องร้อนถึง hot", และ "manual override 30 นาที" ออก —
+    //  เปิดตามตารางเรียนตรงๆเสมอ แม้มีคนสั่งเองล่าสุดไปก่อนก็ตาม ยังเคารพ manualOnly_ (FR-17 สั่งเองอย่างเดียว) อยู่)
+    if (!manualOnly_ && !ac_.on && !in.isHoliday && settings_.autoOn &&
         in.minutesToNextSlotStart >= 0 && in.minutesToNextSlotStart <= (int32_t)settings_.preOpenMin &&
-        in.tempC >= settings_.hot && elapsed(in.nowMs, lastHotTriggerMs_) >= (demo_ ? 10000u : 180000u)) {
+        elapsed(in.nowMs, lastHotTriggerMs_) >= (demo_ ? 10000u : 180000u)) {
       lastHotTriggerMs_ = in.nowMs;
       if (sendOn(d, in.nowMs, Source::Schedule, "เปิดล่วงหน้าก่อนคาบเรียน")) return d;
     }
@@ -236,6 +245,7 @@ class Controller {
   uint32_t lastPirMs_ = 0;
   uint32_t warnUntil_ = 0;
   bool scheduleWarnActive_ = false;
+  bool wasScheduleSlotActive_ = false;
   uint32_t hotSinceMs_ = 0;
   uint32_t lastHotTriggerMs_ = 0;
   uint32_t manualOverrideStart_ = 0;

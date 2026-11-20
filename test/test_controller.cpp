@@ -107,6 +107,38 @@ void test_empty_room_warns_then_turns_off() {
   TEST_ASSERT_FALSE(c.state().on);
 }
 
+// บั๊กเดิม: เช็ค scheduleSlotActiveNow && minutesSlotRemaining==0 พร้อมกัน ซึ่งเกิดขึ้นจริงไม่ได้
+// (ตอนนาทีสุดท้ายเหลือ 0 คาบก็ถือว่าจบไปแล้ว activeNow เป็น false ไปก่อน) ทำให้แอร์ไม่เคยปิดเองท้ายคาบ
+void test_schedule_end_turns_ac_off() {
+  Settings s = makeSettings();
+  Controller c(s);
+  c.begin(0);
+
+  // เปิดแอร์เองผ่านกฎเปิดล่วงหน้าตามตาราง (ไม่ใช่ applyCommand เพราะนั่นจะเซ็ต manual override)
+  // เริ่มที่ t=200000ms (เกินคูลดาวน์ 180000ms ของกฎเปิดอัตโนมัติ ไม่งั้นกฎจะไม่ยอมยิงตอน t=0)
+  auto inPreOpen = baseInputs(200000);
+  inPreOpen.minutesToNextSlotStart = 0;
+  Controller::Decision preOpen = c.tick(inPreOpen);
+  TEST_ASSERT_TRUE(preOpen.sendOn);
+  TEST_ASSERT_TRUE(c.state().on);
+
+  // อยู่ในคาบเรียน เหลือ 1 นาที (ในช่วง grace) — ยังไม่ปิด แค่เริ่มเตือน
+  auto inActive = baseInputs(260000);
+  inActive.scheduleSlotActiveNow = true;
+  inActive.minutesSlotRemaining = 1;
+  Controller::Decision tickActive = c.tick(inActive);
+  TEST_ASSERT_FALSE(tickActive.any());
+  TEST_ASSERT_TRUE(c.state().on);
+
+  // คาบจบแล้ว (ไม่ active อีกต่อไป) → ต้องปิดแอร์เอง
+  auto inEnded = baseInputs(320000);
+  inEnded.scheduleSlotActiveNow = false;
+  inEnded.minutesSlotRemaining = -1;
+  Controller::Decision tickEnded = c.tick(inEnded);
+  TEST_ASSERT_TRUE(tickEnded.sendOff);
+  TEST_ASSERT_FALSE(c.state().on);
+}
+
 void test_motion_resets_empty_timer() {
   Settings s = makeSettings();
   Controller c(s);
@@ -237,6 +269,7 @@ int main() {
   RUN_TEST(test_anti_spam_blocks_rapid_commands);
   RUN_TEST(test_set_temp_clamped_by_channel_min);
   RUN_TEST(test_empty_room_warns_then_turns_off);
+  RUN_TEST(test_schedule_end_turns_ac_off);
   RUN_TEST(test_motion_resets_empty_timer);
   RUN_TEST(test_hot_rule_turns_on_with_recent_pir);
   RUN_TEST(test_hot_rule_requires_recent_pir);
