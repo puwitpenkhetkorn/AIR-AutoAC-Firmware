@@ -101,7 +101,9 @@ class Controller {
     // บั๊กเดิม: เช็ค scheduleSlotActiveNow && minutesSlotRemaining==0 พร้อมกัน ซึ่งเป็นไปไม่ได้จริง
     // (พอเหลือ 0 นาที คาบก็ถือว่าจบไปแล้ว activeNow จะเป็น false ไปก่อนแล้วเสมอ เลยไม่เคยปิดได้เลย)
     // แก้ด้วยการจับจังหวะ "คาบเพิ่งเปลี่ยนจาก active เป็นไม่ active" แทน
-    if (ac_.on && !manualActive && !manualOnly_ && in.scheduleSlotActiveNow && in.minutesSlotRemaining >= 0) {
+    // ผู้ใช้ขอให้ตารางเรียนเป็นตัวกำหนดทั้งเปิดและปิดเสมอ — ตัด !manualActive ออกเหมือนกฎเปิด
+    // (ไม่งั้นถ้ามีคนสั่งเองกลางคาบ แอร์จะไม่ปิดเองตอนหมดคาบ เพราะ manual override 30 นาทีบล็อกไว้)
+    if (ac_.on && !manualOnly_ && in.scheduleSlotActiveNow && in.minutesSlotRemaining >= 0) {
       uint32_t graceSec = demo_ ? 20 : settings_.graceSec;
       if ((uint32_t)in.minutesSlotRemaining * 60u <= graceSec) {
         scheduleWarnActive_ = true;
@@ -112,7 +114,7 @@ class Controller {
       scheduleWarnActive_ = false;
     }
 
-    if (ac_.on && !manualActive && !manualOnly_ && wasScheduleSlotActive_ && !in.scheduleSlotActiveNow) {
+    if (ac_.on && !manualOnly_ && wasScheduleSlotActive_ && !in.scheduleSlotActiveNow) {
       if (sendOff(d, in.nowMs, Source::Schedule, "หมดเวลาคาบเรียน")) {
         wasScheduleSlotActive_ = in.scheduleSlotActiveNow;
         return d;
